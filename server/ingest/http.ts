@@ -14,6 +14,13 @@ export interface FetchHtmlResult {
   via: 'native' | 'cache' | 'firecrawl'
 }
 
+export class PageNotFoundError extends Error {
+  constructor(url: string) {
+    super(`Page not found: ${url}`)
+    this.name = 'PageNotFoundError'
+  }
+}
+
 function cachePathForUrl(cacheDir: string, url: string): string {
   const hash = createHash('sha256').update(url).digest('hex').slice(0, 24)
   return join(cacheDir, `${hash}.html`)
@@ -43,6 +50,12 @@ function looksBlocked(status: number, body: string): boolean {
   )
 }
 
+const MIN_USABLE_HTML_LENGTH = 2_000
+
+function isUsableHtml(html: string): boolean {
+  return html.length >= MIN_USABLE_HTML_LENGTH && !looksBlocked(200, html)
+}
+
 async function fetchNative(url: string): Promise<{ status: number, html: string }> {
   const response = await fetch(url, {
     headers: {
@@ -65,11 +78,12 @@ async function fetchFirecrawl(url: string): Promise<string> {
   const result = await client.scrape(url, {
     formats: ['html'],
     onlyMainContent: false,
+    waitFor: 3_000,
   })
 
   const html = typeof result.html === 'string' ? result.html : null
-  if (!html) {
-    throw new Error(`Firecrawl returned no HTML for ${url}`)
+  if (!html || !isUsableHtml(html)) {
+    throw new Error(`Firecrawl returned no usable HTML for ${url}`)
   }
   return html
 }
@@ -90,7 +104,9 @@ export async function fetchHtml(
   if (!options.forceRefresh) {
     try {
       const html = await readFile(cachePath, 'utf8')
-      return { html, url, retrievedAt, via: 'cache' }
+      if (isUsableHtml(html)) {
+        return { html, url, retrievedAt, via: 'cache' }
+      }
     }
     catch {
       // Cache miss — continue.
@@ -100,7 +116,16 @@ export async function fetchHtml(
   await respectRateLimit(minIntervalMs)
   const native = await fetchNative(url)
 
-  if (native.status >= 200 && native.status < 300 && !looksBlocked(native.status, native.html)) {
+  if (native.status === 404) {
+    throw new PageNotFoundError(url)
+  }
+
+  if (
+    native.status >= 200
+    && native.status < 300
+    && !looksBlocked(native.status, native.html)
+    && isUsableHtml(native.html)
+  ) {
     await mkdir(dirname(cachePath), { recursive: true })
     await writeFile(cachePath, native.html, 'utf8')
     return { html: native.html, url, retrievedAt, via: 'native' }

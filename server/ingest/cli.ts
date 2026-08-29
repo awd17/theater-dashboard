@@ -1,7 +1,7 @@
 import { dailyChartUrl, marketYearUrl, THE_NUMBERS_SOURCE } from './sources/the-numbers/constants'
 import { parseDailyChartHtml } from './sources/the-numbers/daily-chart'
 import { parseMarketYearHtml } from './sources/the-numbers/market-summary'
-import { fetchHtml } from './http'
+import { fetchHtml, PageNotFoundError } from './http'
 import { openLocalDatabase } from './local-db'
 import {
   finishIngestRun,
@@ -114,7 +114,17 @@ async function main(): Promise<void> {
       const dates = eachDateInclusive(args.dailyFrom, args.dailyTo)
       for (const date of dates) {
         const url = dailyChartUrl(date)
-        const page = await fetchHtml(url, { forceRefresh: args.forceRefresh })
+        let page
+        try {
+          page = await fetchHtml(url, { forceRefresh: args.forceRefresh })
+        }
+        catch (error) {
+          if (error instanceof PageNotFoundError) {
+            console.log(`daily ${date}: not published yet, skipping`)
+            continue
+          }
+          throw error
+        }
         urlCount += 1
         const chart = parseDailyChartHtml(page.html, date)
         rowCount += await upsertDailyChart(db, chart, page.url, page.retrievedAt)
