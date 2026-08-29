@@ -25,6 +25,8 @@ const loading = computed(
   () => industryStatus.value === 'pending' || trendStatus.value === 'pending',
 )
 
+useHead({ title: 'Industry' })
+
 const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const yearColors = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)']
 
@@ -97,20 +99,19 @@ const recentMarketYears = computed(() =>
 
 <template>
   <div class="space-y-8">
-    <div class="space-y-1">
-      <h1 class="text-2xl font-semibold tracking-tight">
+    <div class="space-y-1.5">
+      <h1 class="font-heading text-2xl font-semibold tracking-tight sm:text-3xl">
         Industry Overview
       </h1>
-      <p class="text-sm text-muted-foreground">
+      <p class="max-w-2xl text-sm text-muted-foreground">
         Domestic theatrical demand, recovery versus pre-pandemic levels, and distributor concentration.
       </p>
     </div>
 
-    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+    <div class="grid grid-cols-2 gap-3 xl:grid-cols-5 xl:gap-4">
       <DashboardKpiCard
         label="YTD Box Office"
         :value="formatUsdCompact(industry?.ytdBoxOfficeCents)"
-        :delta="industry?.yoyGrowthRatio"
         :period="industry?.latestObservationDate ? `through ${industry.latestObservationDate}` : null"
         explainer="Calendar year-to-date domestic box office versus the same dates last year."
         :loading="loading"

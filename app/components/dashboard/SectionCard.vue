@@ -8,7 +8,9 @@ defineProps<{
 <template>
   <Card>
     <CardHeader>
-      <CardTitle>{{ title }}</CardTitle>
+      <CardTitle class="text-base font-medium tracking-tight">
+        {{ title }}
+      </CardTitle>
       <CardDescription v-if="description">
         {{ description }}
       </CardDescription>

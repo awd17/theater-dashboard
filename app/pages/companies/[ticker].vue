@@ -12,6 +12,10 @@ const orpc = useORPC()
 
 const ticker = computed(() => String(route.params.ticker ?? '').toUpperCase())
 
+useHead({
+  title: computed(() => ticker.value || 'Companies'),
+})
+
 const { data: listing } = await useRpcData(
   'operators-for-nav',
   () => orpc.operators.snapshot(),
@@ -168,11 +172,11 @@ function hasSeries(
 <template>
   <div class="space-y-8">
     <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-      <div class="space-y-1">
-        <h1 class="text-2xl font-semibold tracking-tight">
+      <div class="space-y-1.5">
+        <h1 class="font-heading text-2xl font-semibold tracking-tight sm:text-3xl">
           {{ detail?.name ?? ticker }}
         </h1>
-        <p class="text-sm text-muted-foreground">
+        <p class="max-w-2xl text-sm text-muted-foreground">
           Operating history, profitability, cash flow, and capital structure from SEC filings.
         </p>
       </div>
@@ -189,12 +193,12 @@ function hasSeries(
       </div>
     </div>
 
-    <div v-if="loading" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div v-if="loading" class="grid grid-cols-2 gap-3 xl:grid-cols-4 xl:gap-4">
       <Skeleton v-for="index in 4" :key="index" class="h-28" />
     </div>
 
     <template v-else-if="latest">
-      <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div class="grid grid-cols-2 gap-3 xl:grid-cols-4 xl:gap-4">
         <DashboardKpiCard
           label="Revenue"
           :value="formatUsdMillions(latest.revenueCents)"

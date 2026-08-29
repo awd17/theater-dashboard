@@ -21,6 +21,8 @@ const { data: history } = await useRpcData(
   () => orpc.operators.history(),
 )
 
+useHead({ title: 'Operators' })
+
 const loading = computed(() => status.value === 'pending')
 const rows = computed(() => operators.value?.operators ?? [])
 
@@ -101,16 +103,16 @@ const quadrantExtent = 20
 
 <template>
   <div class="space-y-8">
-    <div class="space-y-1">
-      <h1 class="text-2xl font-semibold tracking-tight">
+    <div class="space-y-1.5">
+      <h1 class="font-heading text-2xl font-semibold tracking-tight sm:text-3xl">
         Operator Comparison
       </h1>
-      <p class="text-sm text-muted-foreground">
+      <p class="max-w-2xl text-sm text-muted-foreground">
         Operating performance, per-patron monetization, and balance-sheet risk across AMC, Cinemark, and Marcus.
       </p>
     </div>
 
-    <div v-if="loading" class="grid gap-4 md:grid-cols-3">
+    <div v-if="loading" class="grid gap-3 sm:grid-cols-2 md:grid-cols-3 md:gap-4">
       <Skeleton v-for="index in 3" :key="index" class="h-40" />
     </div>
 
@@ -119,7 +121,7 @@ const quadrantExtent = 20
     </div>
 
     <template v-else>
-      <div class="grid gap-4 md:grid-cols-3">
+      <div class="grid gap-3 sm:grid-cols-2 md:grid-cols-3 md:gap-4">
         <Card v-for="operator in rows" :key="operator.ticker">
           <CardHeader>
             <div class="flex items-start justify-between gap-2">
