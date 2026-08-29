@@ -7,4 +7,5 @@ test('shows the dashboard shell', async ({ page }) => {
   await expect(page.getByText('System status')).toBeVisible()
   await expect(page.getByText('API is ready.')).toBeVisible()
   await expect(page.getByText('Industry snapshot')).toBeVisible()
+  await expect(page.getByText('Outlook', { exact: true })).toBeVisible()
 })

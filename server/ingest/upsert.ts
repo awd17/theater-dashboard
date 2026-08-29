@@ -5,6 +5,7 @@ import {
   marketPeriod,
   movieExternalIds,
   movies,
+  upcomingReleases,
 } from '../db/schema'
 import type { LocalDatabase } from './local-db'
 import {
@@ -16,9 +17,12 @@ import {
 } from './sources/the-numbers/constants'
 import type { DailyChart } from './sources/the-numbers/daily-chart'
 import type { MarketYear } from './sources/the-numbers/market-summary'
+import { TMDB_SOURCE, tmdbMovieUrl } from './sources/tmdb/client'
+import type { UpcomingTheatricalRelease } from './sources/tmdb/upcoming'
 
-async function resolveMovieId(
+async function resolveMovieIdBySource(
   db: LocalDatabase,
+  source: string,
   title: string,
   externalId: string,
   sourceUrl: string,
@@ -28,7 +32,7 @@ async function resolveMovieId(
     .from(movieExternalIds)
     .where(
       and(
-        eq(movieExternalIds.source, THE_NUMBERS_SOURCE),
+        eq(movieExternalIds.source, source),
         eq(movieExternalIds.externalId, externalId),
       ),
     )
@@ -46,12 +50,21 @@ async function resolveMovieId(
 
   await db.insert(movieExternalIds).values({
     movieId: inserted.id,
-    source: THE_NUMBERS_SOURCE,
+    source,
     externalId,
     sourceUrl,
   })
 
   return inserted.id
+}
+
+function resolveMovieId(
+  db: LocalDatabase,
+  title: string,
+  externalId: string,
+  sourceUrl: string,
+): Promise<number> {
+  return resolveMovieIdBySource(db, THE_NUMBERS_SOURCE, title, externalId, sourceUrl)
 }
 
 export async function upsertDailyChart(
@@ -152,6 +165,60 @@ export async function upsertMarketYear(
     })
 
   return 1
+}
+
+export async function upsertUpcomingReleases(
+  db: LocalDatabase,
+  releases: UpcomingTheatricalRelease[],
+  retrievedAt: string,
+): Promise<number> {
+  let rowCount = 0
+
+  for (const release of releases) {
+    const sourceUrl = tmdbMovieUrl(release.tmdbId)
+    const movieId = await resolveMovieIdBySource(
+      db,
+      TMDB_SOURCE,
+      release.title,
+      String(release.tmdbId),
+      sourceUrl,
+    )
+
+    await db
+      .insert(upcomingReleases)
+      .values({
+        movieId,
+        source: TMDB_SOURCE,
+        region: release.region,
+        releaseDate: release.releaseDate,
+        releaseType: release.releaseType,
+        certification: release.certification,
+        popularity: release.popularity,
+        primaryReleaseDate: release.primaryReleaseDate,
+        sourceUrl,
+        retrievedAt,
+      })
+      .onConflictDoUpdate({
+        target: [
+          upcomingReleases.source,
+          upcomingReleases.movieId,
+          upcomingReleases.region,
+          upcomingReleases.releaseDate,
+          upcomingReleases.releaseType,
+        ],
+        set: {
+          certification: release.certification,
+          popularity: release.popularity,
+          primaryReleaseDate: release.primaryReleaseDate,
+          sourceUrl,
+          retrievedAt,
+        },
+      })
+
+    rowCount += 1
+  }
+
+  return rowCount
 }
 
 export async function startIngestRun(

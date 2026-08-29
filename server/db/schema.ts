@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm'
 import {
   index,
   integer,
+  real,
   sqliteTable,
   text,
   uniqueIndex,
@@ -95,6 +96,36 @@ export const marketPeriod = sqliteTable(
   ],
 )
 
+export const upcomingReleases = sqliteTable(
+  'upcoming_releases',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    movieId: integer('movie_id')
+      .notNull()
+      .references(() => movies.id),
+    source: text('source').notNull(),
+    region: text('region').notNull(),
+    releaseDate: text('release_date').notNull(),
+    releaseType: text('release_type').notNull(),
+    certification: text('certification'),
+    popularity: real('popularity'),
+    primaryReleaseDate: text('primary_release_date'),
+    sourceUrl: text('source_url').notNull(),
+    retrievedAt: text('retrieved_at').notNull(),
+    createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  },
+  (table) => [
+    uniqueIndex('upcoming_releases_source_movie_region_date_type_uidx').on(
+      table.source,
+      table.movieId,
+      table.region,
+      table.releaseDate,
+      table.releaseType,
+    ),
+    index('upcoming_releases_release_date_idx').on(table.releaseDate),
+  ],
+)
+
 export const ingestRun = sqliteTable('ingest_run', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   source: text('source').notNull(),
@@ -111,4 +142,5 @@ export type Movie = typeof movies.$inferSelect
 export type MovieExternalId = typeof movieExternalIds.$inferSelect
 export type BoxOfficeDaily = typeof boxOfficeDaily.$inferSelect
 export type MarketPeriod = typeof marketPeriod.$inferSelect
+export type UpcomingRelease = typeof upcomingReleases.$inferSelect
 export type IngestRun = typeof ingestRun.$inferSelect

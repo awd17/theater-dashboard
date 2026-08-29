@@ -11,6 +11,13 @@ const { data: industry, error: industryError, status: industryStatus } = await u
   () => orpc.industry.snapshot(),
 )
 
+const today = new Date().toISOString().slice(0, 10)
+
+const { data: outlook, error: outlookError, status: outlookStatus } = await useAsyncData(
+  'outlook-snapshot',
+  () => orpc.outlook.snapshot({ asOfDate: today }),
+)
+
 function formatUsd(cents: number | null | undefined): string {
   if (cents === null || cents === undefined) {
     return '—'
@@ -102,6 +109,48 @@ function formatRatio(ratio: number | null | undefined): string {
             </p>
             <p class="text-muted-foreground">
               Recovery uses The Numbers box-office-year market totals, not calendar-year sums of daily charts.
+            </p>
+          </template>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Outlook</CardTitle>
+          <CardDescription>
+            Upcoming US theatrical releases from TMDB.
+          </CardDescription>
+        </CardHeader>
+        <CardContent class="space-y-3 text-sm">
+          <p v-if="outlookStatus === 'pending'">
+            Loading outlook...
+          </p>
+          <p v-else-if="outlookError">
+            Outlook is unavailable.
+          </p>
+          <template v-else-if="outlook">
+            <p>
+              Next 30 / 90 / 180 days:
+              {{ outlook.next30DayCount }} / {{ outlook.next90DayCount }} / {{ outlook.next180DayCount }} releases
+            </p>
+            <p>
+              Expected wide releases next 90 days: {{ outlook.next90DayWideCount }}
+            </p>
+            <div v-if="outlook.upcomingWideReleases.length > 0">
+              <p class="font-medium">
+                Next wide releases
+              </p>
+              <ul class="mt-1 space-y-1 text-muted-foreground">
+                <li v-for="release in outlook.upcomingWideReleases" :key="release.title + release.releaseDate">
+                  {{ release.releaseDate }} · {{ release.title }}
+                </li>
+              </ul>
+            </div>
+            <p class="text-muted-foreground">
+              Counts are unique films with confirmed US theatrical dates on TMDB.
+              Wide means the traditional 600+ theater definition, proxied pre-release by
+              excluding re-releases and low-traction titles; theater counts only confirm
+              wide status after opening.
             </p>
           </template>
         </CardContent>

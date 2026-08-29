@@ -1,0 +1,109 @@
+{
+  "page": 1,
+  "results": [
+    {
+      "adult": false,
+      "backdrop_path": "/2xfV5Zdq4kCsFVReRXJKnJaUFCD.jpg",
+      "genre_ids": [
+        12,
+        878,
+        28
+      ],
+      "id": 299534,
+      "title": "Avengers: Endgame",
+      "original_language": "en",
+      "original_title": "Avengers: Endgame",
+      "overview": "After the devastating events of Avengers: Infinity War, the universe is in ruins due to the efforts of the Mad Titan, Thanos. With the help of remaining allies, the Avengers must assemble once more in order to undo Thanos' actions and restore order to the universe once and for all, no matter what consequences may be in store.",
+      "popularity": 65.3202,
+      "poster_path": "/ulzhLuWrPK07P1YkdWQLZnQh1JL.jpg",
+      "release_date": "2019-04-26",
+      "softcore": false,
+      "video": false,
+      "vote_average": 8.241,
+      "vote_count": 28476
+    },
+    {
+      "adult": false,
+      "backdrop_path": "/g4wdPZlhVioK69H8Q0o9Id5QhNs.jpg",
+      "genre_ids": [
+        53
+      ],
+      "id": 1101412,
+      "title": "Fall 2: Deadpoint",
+      "original_language": "en",
+      "original_title": "Fall 2: Deadpoint",
+      "overview": "On a perilous climb across Thailand's Mount Kwan, two climbers become trapped thousands of feet above the ground, where vertigo-inducing heights, sheer exposure, and impossible odds turn every moment into a fight for survival.",
+      "popularity": 29.3566,
+      "poster_path": "/p73G56bJGPa5y52cyqWscHR6NnN.jpg",
+      "release_date": "2026-09-02",
+      "softcore": false,
+      "video": false,
+      "vote_average": 0,
+      "vote_count": 0
+    },
+    {
+      "adult": false,
+      "backdrop_path": "/o1UvmHqE2fh0Z62wls5bdrNtBN2.jpg",
+      "genre_ids": [
+        878,
+        9648,
+        28
+      ],
+      "id": 1058424,
+      "title": "Hope",
+      "original_language": "ko",
+      "original_title": "호프",
+      "overview": "In the remote South Korean village of Hope Harbor, police chief Bum-seok and officer Sung-ae are called to investigate a mysterious creature wreaking havoc on the community. But all is not as it seems, and perceptions can be misleading. What begins as ignorance plants the seed of disaster, escalating through human conflict into a tragedy of cosmic proportions.",
+      "popularity": 26.0583,
+      "poster_path": "/bcK5naYzzfY0JBCgrPrsrbV6NO1.jpg",
+      "release_date": "2026-09-07",
+      "softcore": false,
+      "video": false,
+      "vote_average": 8.25,
+      "vote_count": 24
+    },
+    {
+      "adult": false,
+      "backdrop_path": "/sOLgkBKf1gjMRc4yXxM5aciXdfr.jpg",
+      "genre_ids": [
+        16,
+        12,
+        35,
+        10751
+      ],
+      "id": 920,
+      "title": "Cars",
+      "original_language": "en",
+      "original_title": "Cars",
+      "overview": "Lightning McQueen, a hotshot rookie race car driven to succeed, discovers that life is about the journey, not the finish line, when he finds himself unexpectedly detoured in the sleepy Route 66 town of Radiator Springs. On route across the country to the big Piston Cup Championship in California to compete against two seasoned pros, McQueen gets to know the town's offbeat characters.",
+      "popularity": 21.665,
+      "poster_path": "/2Touk3m5gzsqr1VsvxypdyHY5ci.jpg",
+      "release_date": "2006-06-09",
+      "softcore": false,
+      "video": false,
+      "vote_average": 7.048,
+      "vote_count": 15428
+    },
+    {
+      "adult": false,
+      "backdrop_path": "/4840rkbpsiuow5ew155oVKcqJwj.jpg",
+      "genre_ids": [
+        18
+      ],
+      "id": 615,
+      "title": "The Passion of the Christ",
+      "original_language": "en",
+      "original_title": "The Passion of the Christ",
+      "overview": "A graphic portrayal of the last twelve hours of Jesus of Nazareth's life.",
+      "popularity": 17.55,
+      "poster_path": "/rBM5o2HpmCfDejuIPybI09tkY3V.jpg",
+      "release_date": "2004-02-25",
+      "softcore": false,
+      "video": false,
+      "vote_average": 7.54,
+      "vote_count": 5314
+    }
+  ],
+  "total_pages": 9,
+  "total_results": 161
+}

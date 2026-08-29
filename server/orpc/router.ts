@@ -1,9 +1,13 @@
 import { health } from './procedures/health'
-import { snapshot } from './procedures/industry'
+import { snapshot as industrySnapshot } from './procedures/industry'
+import { snapshot as outlookSnapshot } from './procedures/outlook'
 
 export const router = {
   health,
   industry: {
-    snapshot,
+    snapshot: industrySnapshot,
+  },
+  outlook: {
+    snapshot: outlookSnapshot,
   },
 }
