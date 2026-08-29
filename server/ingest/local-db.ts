@@ -23,11 +23,53 @@ function findLocalD1SqlitePath(cwd = process.cwd()): string {
     )
   }
 
-  if (files.length > 1) {
-    files.sort()
+  if (files.length === 1) {
+    return join(dir, files[0]!)
   }
 
-  return join(dir, files[0]!)
+  const ranked = files
+    .map((name) => {
+      const path = join(dir, name)
+      const sqlite = new Database(path, { readonly: true })
+      try {
+        const tables = sqlite
+          .query(
+            `SELECT count(*) AS c
+             FROM sqlite_master
+             WHERE type = 'table'
+               AND name NOT LIKE 'sqlite_%'
+               AND name NOT LIKE '_cf_%'
+               AND name <> 'd1_migrations'`,
+          )
+          .get() as { c: number } | null
+        const rows = sqlite
+          .query(
+            `SELECT
+               COALESCE((SELECT count(*) FROM box_office_daily), 0)
+               + COALESCE((SELECT count(*) FROM company_facts), 0)
+               + COALESCE((SELECT count(*) FROM upcoming_releases), 0)
+               AS c`,
+          )
+          .get() as { c: number } | null
+        return { path, tableCount: tables?.c ?? 0, rowCount: rows?.c ?? 0 }
+      }
+      catch {
+        return { path, tableCount: 0, rowCount: 0 }
+      }
+      finally {
+        sqlite.close()
+      }
+    })
+    .sort((a, b) => b.rowCount - a.rowCount || b.tableCount - a.tableCount)
+
+  const best = ranked[0]
+  if (!best || best.tableCount === 0) {
+    throw new Error(
+      `No usable local D1 sqlite found in ${dir}. Run bun run db:migrate first.`,
+    )
+  }
+
+  return best.path
 }
 
 export function openLocalDatabase(sqlitePath = findLocalD1SqlitePath()) {
