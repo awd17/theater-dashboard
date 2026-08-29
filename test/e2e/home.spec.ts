@@ -1,13 +1,27 @@
 import { expect, test } from '@playwright/test'
 
-test('shows the dashboard shell', async ({ page }) => {
+test('shows industry overview shell', async ({ page }) => {
   await page.goto('/')
 
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
-  await expect(page.getByText('System status')).toBeVisible()
-  await expect(page.getByText('API is ready.')).toBeVisible()
-  await expect(page.getByText('Industry snapshot')).toBeVisible()
-  await expect(page.getByText('Outlook', { exact: true })).toBeVisible()
-  await expect(page.getByText('Operators', { exact: true })).toBeVisible()
-  await expect(page.getByText('Annual market history')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Industry Overview' })).toBeVisible()
+  await expect(page.getByText('YTD Box Office')).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Industry', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Operators', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Companies', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Outlook', exact: true })).toBeVisible()
+})
+
+test('navigates between dashboard areas', async ({ page }) => {
+  await page.goto('/')
+
+  await page.getByRole('link', { name: 'Operators', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Operator Comparison' })).toBeVisible()
+
+  await page.getByRole('link', { name: 'Outlook', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Outlook' })).toBeVisible()
+  await expect(page.getByText('Next 30 days')).toBeVisible()
+
+  await page.getByRole('link', { name: 'Companies', exact: true }).click()
+  await expect(page).toHaveURL(/\/companies\/AMC/i)
+  await expect(page.getByRole('heading').first()).toBeVisible()
 })

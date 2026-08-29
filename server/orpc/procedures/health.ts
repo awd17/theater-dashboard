@@ -20,7 +20,7 @@ export function databaseHealth(connected: boolean): HealthResult {
 export const health = pub
   .output(healthResultSchema)
   .handler(async ({ context }) => {
-    const db = getDatabase(context.event)
+    const db = await getDatabase(context.event)
 
     if (!db) {
       return databaseHealth(false)

@@ -1,15 +1,29 @@
 import { drizzle } from 'drizzle-orm/d1'
 import type { H3Event } from 'h3'
+import type { CloudflareEnv } from '../types/bindings'
 import * as schema from './schema'
 
-export function getDatabase(event: H3Event) {
-  const d1 = event.context.cloudflare?.env.DB
+type GlobalEnv = CloudflareEnv | Promise<CloudflareEnv | undefined> | undefined
 
-  if (!d1) {
-    return null
-  }
-
-  return drizzle(d1, { schema })
+function readGlobalEnv(): GlobalEnv {
+  return (globalThis as { __env__?: GlobalEnv }).__env__
 }
 
-export type AppDatabase = NonNullable<ReturnType<typeof getDatabase>>
+export async function getDatabase(event: H3Event) {
+  const fromEvent = event.context.cloudflare?.env.DB
+  if (fromEvent) {
+    return drizzle(fromEvent, { schema })
+  }
+
+  const globalEnv = readGlobalEnv()
+  if (globalEnv) {
+    const env = await Promise.resolve(globalEnv)
+    if (env?.DB) {
+      return drizzle(env.DB, { schema })
+    }
+  }
+
+  return null
+}
+
+export type AppDatabase = NonNullable<Awaited<ReturnType<typeof getDatabase>>>

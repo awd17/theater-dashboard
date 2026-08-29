@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
-import { getDatabase } from '../../db/client'
+import { getDatabase, type AppDatabase } from '../../db/client'
 import { companies, companyFacts } from '../../db/schema'
 import {
   buildOperatorQuarterlyHistory,
@@ -10,7 +10,7 @@ import {
 import { pub } from '../context'
 
 async function loadCompanyFactRows(
-  db: NonNullable<ReturnType<typeof getDatabase>>,
+  db: AppDatabase,
   companyId: number,
 ): Promise<OperatorFactRow[]> {
   return await db
@@ -26,6 +26,30 @@ async function loadCompanyFactRows(
     .from(companyFacts)
     .where(eq(companyFacts.companyId, companyId))
 }
+
+const quarterSchema = z.object({
+  periodEnd: z.string(),
+  label: z.string(),
+  revenueCents: z.number().int(),
+  netIncomeCents: z.number().int().nullable(),
+  attendanceCount: z.number().int().nullable(),
+  admissionsRevenueCents: z.number().int().nullable(),
+  foodBeverageRevenueCents: z.number().int().nullable(),
+  averageTicketPriceCents: z.number().int().nullable(),
+  foodBeveragePerPatronCents: z.number().int().nullable(),
+  revenuePerPatronCents: z.number().int().nullable(),
+  operatingIncomeCents: z.number().int().nullable(),
+  operatingCashFlowCents: z.number().int().nullable(),
+  capexCents: z.number().int().nullable(),
+  freeCashFlowCents: z.number().int().nullable(),
+  cashCents: z.number().int().nullable(),
+  longTermDebtCents: z.number().int().nullable(),
+  interestExpenseCents: z.number().int().nullable(),
+  operatingLeaseCents: z.number().int().nullable(),
+  sharesOutstanding: z.number().int().nullable(),
+  theatreCount: z.number().int().nullable(),
+  screenCount: z.number().int().nullable(),
+})
 
 export const operatorSnapshotSchema = z.object({
   operators: z.array(
@@ -56,6 +80,7 @@ export const operatorSnapshotSchema = z.object({
       capexCents: z.number().int().nullable(),
       freeCashFlowCents: z.number().int().nullable(),
       operatingLeaseCents: z.number().int().nullable(),
+      revenuePerPatronYoyRatio: z.number().nullable(),
     }),
   ),
 })
@@ -65,7 +90,7 @@ export type OperatorSnapshotResult = z.infer<typeof operatorSnapshotSchema>
 export const snapshot = pub
   .output(operatorSnapshotSchema)
   .handler(async ({ context }) => {
-    const db = getDatabase(context.event)
+    const db = await getDatabase(context.event)
 
     if (!db) {
       return { operators: [] }
@@ -90,15 +115,7 @@ export const operatorHistorySchema = z.object({
     z.object({
       ticker: z.string(),
       name: z.string(),
-      quarters: z.array(
-        z.object({
-          periodEnd: z.string(),
-          label: z.string(),
-          revenueCents: z.number().int(),
-          netIncomeCents: z.number().int().nullable(),
-          attendanceCount: z.number().int().nullable(),
-        }),
-      ),
+      quarters: z.array(quarterSchema),
     }),
   ),
 })
@@ -108,7 +125,7 @@ export type OperatorHistoryResult = z.infer<typeof operatorHistorySchema>
 export const history = pub
   .output(operatorHistorySchema)
   .handler(async ({ context }) => {
-    const db = getDatabase(context.event)
+    const db = await getDatabase(context.event)
 
     if (!db) {
       return { operators: [] }
@@ -130,4 +147,54 @@ export const history = pub
     }
 
     return operatorHistorySchema.parse({ operators })
+  })
+
+export const operatorDetailSchema = z.object({
+  ticker: z.string(),
+  name: z.string(),
+  latest: operatorSnapshotSchema.shape.operators.element.nullable(),
+  quarters: z.array(quarterSchema),
+})
+
+export type OperatorDetailResult = z.infer<typeof operatorDetailSchema>
+
+export const detail = pub
+  .input(z.object({ ticker: z.string().min(1).max(10) }))
+  .output(operatorDetailSchema)
+  .handler(async ({ context, input }) => {
+    const db = await getDatabase(context.event)
+    const ticker = input.ticker.toUpperCase()
+
+    if (!db) {
+      return {
+        ticker,
+        name: ticker,
+        latest: null,
+        quarters: [],
+      }
+    }
+
+    const company = await db
+      .select({ id: companies.id, ticker: companies.ticker, name: companies.name })
+      .from(companies)
+      .where(eq(companies.ticker, ticker))
+      .get()
+
+    if (!company) {
+      return {
+        ticker,
+        name: ticker,
+        latest: null,
+        quarters: [],
+      }
+    }
+
+    const factRows = await loadCompanyFactRows(db, company.id)
+
+    return operatorDetailSchema.parse({
+      ticker: company.ticker,
+      name: company.name,
+      latest: buildOperatorSnapshotEntry(company, factRows),
+      quarters: buildOperatorQuarterlyHistory(factRows, 16),
+    })
   })

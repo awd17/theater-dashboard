@@ -27,7 +27,7 @@ export const snapshot = pub
   .input(z.object({ asOfDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }))
   .output(outlookSnapshotSchema)
   .handler(async ({ context, input }) => {
-    const db = getDatabase(context.event)
+    const db = await getDatabase(context.event)
 
     if (!db) {
       return {

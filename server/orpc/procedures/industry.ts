@@ -2,7 +2,11 @@ import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { getDatabase } from '../../db/client'
 import { boxOfficeDaily, marketDistributorYear, marketPeriod } from '../../db/schema'
-import { buildDistributorShares, buildIndustrySnapshot } from '../../ingest/metrics'
+import {
+  buildDistributorShares,
+  buildIndustrySnapshot,
+  buildIndustryTrend,
+} from '../../ingest/metrics'
 import {
   DOMESTIC_TERRITORY,
   MARKET_PERIOD_KIND,
@@ -76,7 +80,7 @@ const emptySnapshot: IndustrySnapshotResult = {
 export const snapshot = pub
   .output(industrySnapshotSchema)
   .handler(async ({ context }) => {
-    const db = getDatabase(context.event)
+    const db = await getDatabase(context.event)
 
     if (!db) {
       return emptySnapshot
@@ -135,4 +139,64 @@ export const snapshot = pub
       ...buildIndustrySnapshot(dailyRows, periods),
       distributorShares: buildDistributorShares(distributorRows),
     })
+  })
+
+export const industryTrendSchema = z.object({
+  asOfDate: z.string().nullable(),
+  comparisonYears: z.array(z.number().int()),
+  monthlyByYear: z.array(
+    z.object({
+      year: z.number().int(),
+      months: z.array(
+        z.object({
+          month: z.string(),
+          year: z.number().int(),
+          monthNumber: z.number().int(),
+          boxOfficeCents: z.number().int(),
+        }),
+      ),
+      cumulativeByMonth: z.array(
+        z.object({
+          monthNumber: z.number().int(),
+          cumulativeCents: z.number().int(),
+        }),
+      ),
+    }),
+  ),
+})
+
+export type IndustryTrendResult = z.infer<typeof industryTrendSchema>
+
+const emptyTrend: IndustryTrendResult = {
+  asOfDate: null,
+  comparisonYears: [],
+  monthlyByYear: [],
+}
+
+export const trend = pub
+  .output(industryTrendSchema)
+  .handler(async ({ context }) => {
+    const db = await getDatabase(context.event)
+
+    if (!db) {
+      return emptyTrend
+    }
+
+    const dailyRows = await db
+      .select({
+        observationDate: boxOfficeDaily.observationDate,
+        movieId: boxOfficeDaily.movieId,
+        grossCents: boxOfficeDaily.grossCents,
+        theaterCount: boxOfficeDaily.theaterCount,
+        rank: boxOfficeDaily.rank,
+      })
+      .from(boxOfficeDaily)
+      .where(
+        and(
+          eq(boxOfficeDaily.source, THE_NUMBERS_SOURCE),
+          eq(boxOfficeDaily.territory, DOMESTIC_TERRITORY),
+        ),
+      )
+
+    return industryTrendSchema.parse(buildIndustryTrend(dailyRows))
   })

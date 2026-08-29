@@ -226,7 +226,7 @@ describe('buildOperatorQuarterlyHistory', () => {
     ])
 
     expect(history.map((entry) => entry.label)).toEqual(['Q2 2025', 'Q1 2026', 'Q2 2026'])
-    expect(history.at(-1)).toEqual({
+    expect(history.at(-1)).toMatchObject({
       periodEnd: '2026-06-30',
       label: 'Q2 2026',
       revenueCents: 150_000,

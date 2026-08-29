@@ -39,6 +39,7 @@ export interface OperatorSnapshotEntry {
   capexCents: number | null
   freeCashFlowCents: number | null
   operatingLeaseCents: number | null
+  revenuePerPatronYoyRatio: number | null
 }
 
 function daysBetween(from: string, to: string): number {
@@ -137,11 +138,53 @@ export interface OperatorQuarterEntry {
   revenueCents: number
   netIncomeCents: number | null
   attendanceCount: number | null
+  admissionsRevenueCents: number | null
+  foodBeverageRevenueCents: number | null
+  averageTicketPriceCents: number | null
+  foodBeveragePerPatronCents: number | null
+  revenuePerPatronCents: number | null
+  operatingIncomeCents: number | null
+  operatingCashFlowCents: number | null
+  capexCents: number | null
+  freeCashFlowCents: number | null
+  cashCents: number | null
+  longTermDebtCents: number | null
+  interestExpenseCents: number | null
+  operatingLeaseCents: number | null
+  sharesOutstanding: number | null
+  theatreCount: number | null
+  screenCount: number | null
 }
 
 export function calendarQuarterLabel(periodEnd: string): string {
   const [year, month] = periodEnd.split('-')
   return `Q${Math.ceil(Number(month) / 3)} ${year}`
+}
+
+function debtTotalAt(rows: OperatorFactRow[], periodEnd: string): number | null {
+  const debtNoncurrent = instantAt(rows, 'long_term_debt_noncurrent', periodEnd)
+  const debtCurrent = instantAt(rows, 'long_term_debt_current', periodEnd)
+  return debtNoncurrent
+    ? debtNoncurrent.value + (debtCurrent?.value ?? 0)
+    : null
+}
+
+function leaseTotalAt(rows: OperatorFactRow[], periodEnd: string): number | null {
+  const leaseNoncurrent = instantAt(rows, 'operating_lease_noncurrent', periodEnd)
+  const leaseCurrent = instantAt(rows, 'operating_lease_current', periodEnd)
+  return leaseNoncurrent
+    ? leaseNoncurrent.value + (leaseCurrent?.value ?? 0)
+    : null
+}
+
+function perPatronAt(
+  attendance: number | null,
+  revenueCents: number | null,
+): number | null {
+  if (attendance === null || attendance === 0 || revenueCents === null) {
+    return null
+  }
+  return Math.round(revenueCents / attendance)
 }
 
 export function buildOperatorQuarterlyHistory(
@@ -169,16 +212,72 @@ export function buildOperatorQuarterlyHistory(
       if (revenueCents === null) {
         return null
       }
+      const attendanceCount = quarterlyFlowAt(rows, 'attendance', periodEnd)?.value ?? null
+      const admissionsRevenueCents = quarterlyFlowAt(rows, 'admissions_revenue', periodEnd)?.value ?? null
+      const foodBeverageRevenueCents = quarterlyFlowAt(rows, 'food_beverage_revenue', periodEnd)?.value ?? null
+      const operatingCashFlowCents = quarterlyFlowOrYtdDifference(rows, 'operating_cash_flow', periodEnd)
+      const capexCents = quarterlyFlowOrYtdDifference(rows, 'capex', periodEnd)
+      const shares = latestFiled(
+        rows.filter((row) => row.metric === 'shares_outstanding' && row.periodEnd === periodEnd),
+      )
+
       return {
         periodEnd,
         label: calendarQuarterLabel(periodEnd),
         revenueCents,
         netIncomeCents: quarterlyFlowOrYtdDifference(rows, 'net_income', periodEnd),
-        attendanceCount: quarterlyFlowAt(rows, 'attendance', periodEnd)?.value ?? null,
+        attendanceCount,
+        admissionsRevenueCents,
+        foodBeverageRevenueCents,
+        averageTicketPriceCents: perPatronAt(attendanceCount, admissionsRevenueCents),
+        foodBeveragePerPatronCents: perPatronAt(attendanceCount, foodBeverageRevenueCents),
+        revenuePerPatronCents: perPatronAt(attendanceCount, revenueCents),
+        operatingIncomeCents: quarterlyFlowOrYtdDifference(rows, 'operating_income', periodEnd),
+        operatingCashFlowCents,
+        capexCents,
+        freeCashFlowCents: operatingCashFlowCents !== null && capexCents !== null
+          ? operatingCashFlowCents - capexCents
+          : null,
+        cashCents: instantAt(rows, 'cash', periodEnd)?.value ?? null,
+        longTermDebtCents: debtTotalAt(rows, periodEnd),
+        interestExpenseCents: quarterlyFlowAt(rows, 'interest_expense', periodEnd)?.value ?? null,
+        operatingLeaseCents: leaseTotalAt(rows, periodEnd),
+        sharesOutstanding: shares?.value ?? null,
+        theatreCount: latestFiled(
+          rows.filter((row) => row.metric === 'theatre_count' && row.periodEnd === periodEnd),
+        )?.value ?? null,
+        screenCount: latestFiled(
+          rows.filter((row) => row.metric === 'screen_count' && row.periodEnd === periodEnd),
+        )?.value ?? null,
       }
     })
     .filter((entry) => entry !== null)
     .reverse()
+}
+
+function priorYearComparable(
+  history: OperatorQuarterEntry[],
+  currentEnd: string,
+  pick: (entry: OperatorQuarterEntry) => number | null,
+): number | null {
+  const current = history.find((entry) => entry.periodEnd === currentEnd)
+  if (!current) {
+    return null
+  }
+  const currentValue = pick(current)
+  if (currentValue === null) {
+    return null
+  }
+
+  const prior = history.find((entry) => {
+    const distance = daysBetween(entry.periodEnd, currentEnd)
+    return Math.abs(distance - 365) <= YOY_WINDOW_DAYS
+  })
+  const priorValue = prior ? pick(prior) : null
+  if (priorValue === null || priorValue === 0) {
+    return null
+  }
+  return currentValue / priorValue - 1
 }
 
 export function buildOperatorSnapshotEntry(
@@ -212,6 +311,7 @@ export function buildOperatorSnapshotEntry(
     capexCents: null,
     freeCashFlowCents: null,
     operatingLeaseCents: null,
+    revenuePerPatronYoyRatio: null,
   }
 
   const quarterlyRevenues = rows.filter((row) => row.metric === 'revenue' && isQuarterlyFlow(row))
@@ -285,6 +385,11 @@ export function buildOperatorSnapshotEntry(
   const leaseNoncurrent = instantAt(rows, 'operating_lease_noncurrent', latestQuarterEnd)
   const leaseCurrent = instantAt(rows, 'operating_lease_current', latestQuarterEnd)
 
+  const history = buildOperatorQuarterlyHistory(rows, 12)
+  const revenuePerPatronYoyRatio = latestAttendanceEnd
+    ? priorYearComparable(history, latestAttendanceEnd, (entry) => entry.revenuePerPatronCents)
+    : null
+
   return {
     ticker: company.ticker,
     name: company.name,
@@ -292,8 +397,8 @@ export function buildOperatorSnapshotEntry(
     latestQuarterEnd,
     revenueCents: revenue.value,
     revenueYoyRatio: yoyRatio(rows, 'revenue', latestQuarterEnd, revenue.value),
-    operatingIncomeCents: quarterlyFlowAt(rows, 'operating_income', latestQuarterEnd)?.value ?? null,
-    netIncomeCents: quarterlyFlowAt(rows, 'net_income', latestQuarterEnd)?.value ?? null,
+    operatingIncomeCents: quarterlyFlowOrYtdDifference(rows, 'operating_income', latestQuarterEnd),
+    netIncomeCents: quarterlyFlowOrYtdDifference(rows, 'net_income', latestQuarterEnd),
     cashCents: instantAt(rows, 'cash', latestQuarterEnd)?.value ?? null,
     longTermDebtCents: debtNoncurrent
       ? debtNoncurrent.value + (debtCurrent?.value ?? 0)
@@ -320,5 +425,6 @@ export function buildOperatorSnapshotEntry(
     operatingLeaseCents: leaseNoncurrent
       ? leaseNoncurrent.value + (leaseCurrent?.value ?? 0)
       : null,
+    revenuePerPatronYoyRatio,
   }
 }

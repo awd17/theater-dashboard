@@ -5,7 +5,12 @@ import { RPCLink } from '@orpc/client/fetch'
 
 export default defineNuxtPlugin(() => {
   const link = new RPCLink({
-    url: '/rpc',
+    url: () => {
+      if (import.meta.server) {
+        return '/rpc'
+      }
+      return `${window.location.origin}/rpc`
+    },
   })
 
   const client: RouterClient<typeof router> = createORPCClient(link)

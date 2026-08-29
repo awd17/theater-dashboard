@@ -19,10 +19,13 @@
     "ingest:sec": "bun run server/ingest/sec-cli.ts"
   },
   "dependencies": {
-    "@lucide/vue": "^1.35.0",
+    "@lucide/vue": "^1.37.0",
     "@mendable/firecrawl-js": "^4.37.0",
     "@orpc/client": "^1.15.0",
     "@orpc/server": "^1.15.0",
+    "@tanstack/charts": "^0.16.0",
+    "@unovis/ts": "^1.6.7",
+    "@unovis/vue": "^1.6.7",
     "@vueuse/core": "^14.4.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

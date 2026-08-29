@@ -220,6 +220,85 @@ export function computeRecoveryVs2019(
   }
 }
 
+export interface MonthlyBoxOfficePoint {
+  month: string
+  year: number
+  monthNumber: number
+  boxOfficeCents: number
+}
+
+export interface YearMonthlySeries {
+  year: number
+  months: MonthlyBoxOfficePoint[]
+  cumulativeByMonth: Array<{ monthNumber: number, cumulativeCents: number }>
+}
+
+export interface IndustryTrend {
+  asOfDate: string | null
+  monthlyByYear: YearMonthlySeries[]
+  comparisonYears: number[]
+}
+
+function monthKey(observationDate: string): string {
+  return observationDate.slice(0, 7)
+}
+
+export function buildIndustryTrend(
+  dailyRows: DailyGrossRow[],
+  comparisonYears = [2019],
+): IndustryTrend {
+  const observationDate = latestDate(dailyRows)
+  if (!observationDate) {
+    return {
+      asOfDate: null,
+      monthlyByYear: [],
+      comparisonYears,
+    }
+  }
+
+  const currentYear = Number(observationDate.slice(0, 4))
+  const priorYear = currentYear - 1
+  const years = [...new Set([currentYear, priorYear, ...comparisonYears])].sort((a, b) => a - b)
+
+  const monthlyTotals = new Map<string, number>()
+  for (const row of dailyRows) {
+    if (row.grossCents === null) {
+      continue
+    }
+    const key = monthKey(row.observationDate)
+    monthlyTotals.set(key, (monthlyTotals.get(key) ?? 0) + row.grossCents)
+  }
+
+  const monthlyByYear: YearMonthlySeries[] = years.map((year) => {
+    const months: MonthlyBoxOfficePoint[] = []
+    for (let monthNumber = 1; monthNumber <= 12; monthNumber += 1) {
+      const month = `${year}-${String(monthNumber).padStart(2, '0')}`
+      const boxOfficeCents = monthlyTotals.get(month)
+      if (boxOfficeCents === undefined) {
+        continue
+      }
+      if (year === currentYear && month > observationDate.slice(0, 7)) {
+        continue
+      }
+      months.push({ month, year, monthNumber, boxOfficeCents })
+    }
+
+    let running = 0
+    const cumulativeByMonth = months.map((point) => {
+      running += point.boxOfficeCents
+      return { monthNumber: point.monthNumber, cumulativeCents: running }
+    })
+
+    return { year, months, cumulativeByMonth }
+  })
+
+  return {
+    asOfDate: observationDate,
+    monthlyByYear,
+    comparisonYears: years,
+  }
+}
+
 export function buildIndustrySnapshot(
   dailyRows: DailyGrossRow[],
   marketPeriods: MarketPeriodRow[],

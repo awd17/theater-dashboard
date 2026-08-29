@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildDistributorShares,
   buildIndustrySnapshot,
+  buildIndustryTrend,
   buildMarketYearHistory,
   computeRecoveryVs2019,
   computeTop10Concentration,
@@ -204,5 +205,69 @@ describe('buildIndustrySnapshot', () => {
     expect(snapshot.top10Concentration).toBe(1)
     expect(snapshot.recoveryVs2019Ratio).toBe(0.7)
     expect(snapshot.recoveryPeriodLabel).toBe('2025')
+  })
+})
+
+describe('buildIndustryTrend', () => {
+  it('aggregates daily gross into monthly series by year', () => {
+    const dailyRows: DailyGrossRow[] = [
+      {
+        observationDate: '2019-01-15',
+        movieId: 1,
+        grossCents: 100,
+        theaterCount: 1,
+        rank: 1,
+      },
+      {
+        observationDate: '2019-02-10',
+        movieId: 1,
+        grossCents: 200,
+        theaterCount: 1,
+        rank: 1,
+      },
+      {
+        observationDate: '2025-01-05',
+        movieId: 1,
+        grossCents: 150,
+        theaterCount: 1,
+        rank: 1,
+      },
+      {
+        observationDate: '2026-01-05',
+        movieId: 1,
+        grossCents: 180,
+        theaterCount: 1,
+        rank: 1,
+      },
+      {
+        observationDate: '2026-01-20',
+        movieId: 2,
+        grossCents: 20,
+        theaterCount: 1,
+        rank: 2,
+      },
+      {
+        observationDate: '2026-02-01',
+        movieId: 1,
+        grossCents: 300,
+        theaterCount: 1,
+        rank: 1,
+      },
+    ]
+
+    const trend = buildIndustryTrend(dailyRows)
+
+    expect(trend.asOfDate).toBe('2026-02-01')
+    expect(trend.comparisonYears).toEqual([2019, 2025, 2026])
+
+    const current = trend.monthlyByYear.find((series) => series.year === 2026)!
+    expect(current.months).toEqual([
+      { month: '2026-01', year: 2026, monthNumber: 1, boxOfficeCents: 200 },
+      { month: '2026-02', year: 2026, monthNumber: 2, boxOfficeCents: 300 },
+    ])
+    expect(current.cumulativeByMonth).toEqual([
+      { monthNumber: 1, cumulativeCents: 200 },
+      { monthNumber: 2, cumulativeCents: 500 },
+    ])
   })
 })
