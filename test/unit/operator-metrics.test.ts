@@ -111,4 +111,82 @@ describe('buildOperatorSnapshotEntry', () => {
       expect(entry.revenuePerPatronCents).toBeNull()
     })
   })
+
+  describe('revenue split and per-patron metrics', () => {
+    const withSplit = [
+      ...rows,
+      flow('attendance', '2026-04-01', '2026-06-30', 50_000),
+      flow('admissions_revenue', '2026-04-01', '2026-06-30', 90_000),
+      flow('food_beverage_revenue', '2026-04-01', '2026-06-30', 45_000),
+    ]
+    const splitEntry = buildOperatorSnapshotEntry(company, withSplit)
+
+    it('reports the admissions and food & beverage split', () => {
+      expect(splitEntry.admissionsRevenueCents).toBe(90_000)
+      expect(splitEntry.foodBeverageRevenueCents).toBe(45_000)
+    })
+
+    it('derives average ticket price and food & beverage per patron', () => {
+      expect(splitEntry.averageTicketPriceCents).toBe(Math.round(90_000 / 50_000))
+      expect(splitEntry.foodBeveragePerPatronCents).toBe(Math.round(45_000 / 50_000))
+    })
+
+    it('skips per-patron derivations when attendance covers a different quarter', () => {
+      const mismatched = buildOperatorSnapshotEntry(company, [
+        ...rows,
+        flow('attendance', '2026-01-01', '2026-03-31', 40_000, '2026-05-01'),
+        flow('admissions_revenue', '2026-04-01', '2026-06-30', 90_000),
+      ])
+      expect(mismatched.admissionsRevenueCents).toBe(90_000)
+      expect(mismatched.averageTicketPriceCents).toBeNull()
+    })
+  })
+
+  describe('cash flow, interest, and leases', () => {
+    const withFinancials = [
+      ...rows,
+      flow('interest_expense', '2026-04-01', '2026-06-30', 11_000),
+      flow('operating_cash_flow', '2026-01-01', '2026-06-30', 10_690),
+      flow('operating_cash_flow', '2026-01-01', '2026-03-31', -12_850),
+      flow('capex', '2026-01-01', '2026-06-30', 9_150),
+      flow('capex', '2026-01-01', '2026-03-31', 4_620),
+      instant('operating_lease_noncurrent', '2026-06-30', 300_000),
+      instant('operating_lease_current', '2026-06-30', 50_000),
+    ]
+    const financialEntry = buildOperatorSnapshotEntry(company, withFinancials)
+
+    it('takes quarterly interest expense directly', () => {
+      expect(financialEntry.interestExpenseCents).toBe(11_000)
+    })
+
+    it('derives the quarter from year-to-date cash flow facts', () => {
+      expect(financialEntry.operatingCashFlowCents).toBe(10_690 - -12_850)
+      expect(financialEntry.capexCents).toBe(9_150 - 4_620)
+    })
+
+    it('computes free cash flow from the derived quarter values', () => {
+      expect(financialEntry.freeCashFlowCents).toBe(23_540 - 4_530)
+    })
+
+    it('sums current and noncurrent operating lease liabilities', () => {
+      expect(financialEntry.operatingLeaseCents).toBe(350_000)
+    })
+
+    it('uses a first-quarter year-to-date fact directly as the quarter', () => {
+      const q1 = buildOperatorSnapshotEntry(company, [
+        flow('revenue', '2026-01-01', '2026-03-31', 80_000, '2026-05-01'),
+        flow('operating_cash_flow', '2026-01-01', '2026-03-31', 5_000, '2026-05-01'),
+      ])
+      expect(q1.operatingCashFlowCents).toBe(5_000)
+    })
+
+    it('returns null cash flow when the previous year-to-date fact is missing', () => {
+      const partial = buildOperatorSnapshotEntry(company, [
+        ...rows,
+        flow('operating_cash_flow', '2026-01-01', '2026-06-30', 10_690),
+      ])
+      expect(partial.operatingCashFlowCents).toBeNull()
+      expect(partial.freeCashFlowCents).toBeNull()
+    })
+  })
 })

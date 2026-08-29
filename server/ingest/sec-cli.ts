@@ -10,9 +10,9 @@ import {
   type SecCompany,
 } from './sources/sec/constants'
 import {
-  attendanceStrategyExists,
-  parseFilingAttendance,
-} from './sources/sec/filing-attendance'
+  filingMetricsConfigured,
+  parseFilingOperatingMetrics,
+} from './sources/sec/filing-operating-metrics'
 import { findLatestFiling } from './sources/sec/submissions'
 import {
   finishIngestRun,
@@ -33,13 +33,13 @@ async function fetchSec(url: string, accept: string): Promise<Response> {
   return response
 }
 
-async function ingestAttendance(
+async function ingestFilingMetrics(
   db: Awaited<ReturnType<typeof openLocalDatabase>>,
   company: SecCompany,
   companyId: number,
 ): Promise<{ urls: number, rows: number }> {
-  if (!attendanceStrategyExists(company.ticker)) {
-    console.log(`${company.ticker}: attendance not disclosed in filings, skipping`)
+  if (!filingMetricsConfigured(company.ticker)) {
+    console.log(`${company.ticker}: no filing-text metrics configured, skipping`)
     return { urls: 0, rows: 0 }
   }
 
@@ -55,31 +55,38 @@ async function ingestAttendance(
   const html = await (await fetchSec(documentUrl, 'text/html')).text()
   const retrievedAt = new Date().toISOString()
 
-  const attendance = parseFilingAttendance(html, company.ticker, filing.reportDate)
-  if (!attendance) {
-    console.log(`${company.ticker}: attendance table not found in ${filing.form} ${filing.accession}`)
+  const metrics = parseFilingOperatingMetrics(html, company.ticker, filing.reportDate)
+  if (metrics.length === 0) {
+    console.log(`${company.ticker}: no operating rows found in ${filing.form} ${filing.accession}`)
     return { urls: 2, rows: 0 }
   }
 
-  const facts = [attendance.currentQuarter, attendance.priorYearQuarter].map((quarter) => ({
-    metric: 'attendance',
-    concept: 'filing_text:Attendance',
-    unit: 'count',
-    periodStart: quarter.periodStart,
-    periodEnd: quarter.periodEnd,
-    value: quarter.value,
-    fiscalYear: null,
-    fiscalPeriod: null,
-    form: filing.form,
-    filedDate: filing.filingDate,
-    accession: filing.accession,
-  }))
+  const facts = metrics.flatMap((metric) =>
+    [metric.currentQuarter, metric.priorYearQuarter].map((quarter) => ({
+      metric: metric.metric,
+      concept: metric.concept,
+      unit: metric.unit,
+      periodStart: quarter.periodStart,
+      periodEnd: quarter.periodEnd,
+      value: quarter.value,
+      fiscalYear: null,
+      fiscalPeriod: null,
+      form: filing.form,
+      filedDate: filing.filingDate,
+      accession: filing.accession,
+    })),
+  )
 
   const rows = await upsertCompanyFacts(db, companyId, facts, documentUrl, retrievedAt)
-  console.log(
-    `${company.ticker}: attendance ${(attendance.currentQuarter.value / 1e6).toFixed(1)}M`
-    + ` (prior year ${(attendance.priorYearQuarter.value / 1e6).toFixed(1)}M)`,
-  )
+  const summary = metrics
+    .map((metric) => {
+      const value = metric.currentQuarter.value
+      return metric.unit === 'count'
+        ? `${metric.metric}=${(value / 1e6).toFixed(1)}M`
+        : `${metric.metric}=$${(value / 1e8).toFixed(1)}M`
+    })
+    .join(' ')
+  console.log(`${company.ticker}: filing metrics ${summary}`)
   return { urls: 2, rows }
 }
 
@@ -107,9 +114,9 @@ async function main(): Promise<void> {
       console.log(`${company.ticker} (${parsed.entityName}): ${upserted} facts`)
       await new Promise((resolve) => setTimeout(resolve, REQUEST_INTERVAL_MS))
 
-      const attendanceResult = await ingestAttendance(db, company, companyId)
-      urlCount += attendanceResult.urls
-      rowCount += attendanceResult.rows
+      const filingResult = await ingestFilingMetrics(db, company, companyId)
+      urlCount += filingResult.urls
+      rowCount += filingResult.rows
       await new Promise((resolve) => setTimeout(resolve, REQUEST_INTERVAL_MS))
     }
 

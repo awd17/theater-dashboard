@@ -20,7 +20,10 @@ export type OperatorMetric =
   | 'long_term_debt_noncurrent'
   | 'long_term_debt_current'
   | 'interest_expense'
+  | 'operating_cash_flow'
   | 'capex'
+  | 'operating_lease_noncurrent'
+  | 'operating_lease_current'
   | 'shares_outstanding'
 
 export interface MetricConcept {
@@ -41,8 +44,12 @@ export const SEC_METRIC_CONCEPTS: MetricConcept[] = [
   { metric: 'interest_expense', taxonomy: 'us-gaap', concept: 'InterestExpenseDebt', unit: 'USD' },
   { metric: 'interest_expense', taxonomy: 'us-gaap', concept: 'InterestExpenseNonoperating', unit: 'USD' },
   { metric: 'interest_expense', taxonomy: 'us-gaap', concept: 'InterestExpense', unit: 'USD' },
+  { metric: 'operating_cash_flow', taxonomy: 'us-gaap', concept: 'NetCashProvidedByUsedInOperatingActivities', unit: 'USD' },
+  { metric: 'operating_cash_flow', taxonomy: 'us-gaap', concept: 'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations', unit: 'USD' },
   { metric: 'capex', taxonomy: 'us-gaap', concept: 'PaymentsToAcquirePropertyPlantAndEquipment', unit: 'USD' },
   { metric: 'capex', taxonomy: 'us-gaap', concept: 'PaymentsToAcquireProductiveAssets', unit: 'USD' },
+  { metric: 'operating_lease_noncurrent', taxonomy: 'us-gaap', concept: 'OperatingLeaseLiabilityNoncurrent', unit: 'USD' },
+  { metric: 'operating_lease_current', taxonomy: 'us-gaap', concept: 'OperatingLeaseLiabilityCurrent', unit: 'USD' },
   { metric: 'shares_outstanding', taxonomy: 'dei', concept: 'EntityCommonStockSharesOutstanding', unit: 'shares' },
 ]
 

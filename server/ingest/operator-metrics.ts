@@ -26,7 +26,16 @@ export interface OperatorSnapshotEntry {
   sharesOutstanding: number | null
   attendanceCount: number | null
   attendanceYoyRatio: number | null
+  admissionsRevenueCents: number | null
+  foodBeverageRevenueCents: number | null
+  averageTicketPriceCents: number | null
+  foodBeveragePerPatronCents: number | null
   revenuePerPatronCents: number | null
+  interestExpenseCents: number | null
+  operatingCashFlowCents: number | null
+  capexCents: number | null
+  freeCashFlowCents: number | null
+  operatingLeaseCents: number | null
 }
 
 function daysBetween(from: string, to: string): number {
@@ -58,6 +67,40 @@ function instantAt(rows: OperatorFactRow[], metric: string, periodEnd: string): 
   return latestFiled(
     rows.filter((row) => row.metric === metric && row.periodEnd === periodEnd && row.periodStart === row.periodEnd),
   )
+}
+
+function quarterlyFlowOrYtdDifference(
+  rows: OperatorFactRow[],
+  metric: string,
+  periodEnd: string,
+): number | null {
+  const direct = quarterlyFlowAt(rows, metric, periodEnd)
+  if (direct) {
+    return direct.value
+  }
+
+  const ytd = latestFiled(
+    rows.filter((row) => {
+      if (row.metric !== metric || row.periodEnd !== periodEnd) {
+        return false
+      }
+      return daysBetween(row.periodStart, row.periodEnd) > QUARTER_MAX_DAYS
+    }),
+  )
+  if (!ytd) {
+    return null
+  }
+
+  const previousYtd = latestFiled(
+    rows.filter((row) => {
+      if (row.metric !== metric || row.periodStart !== ytd.periodStart) {
+        return false
+      }
+      const gap = daysBetween(row.periodEnd, periodEnd)
+      return gap >= QUARTER_MIN_DAYS && gap <= QUARTER_MAX_DAYS
+    }),
+  )
+  return previousYtd ? ytd.value - previousYtd.value : null
 }
 
 function quarterLabel(row: OperatorFactRow): string {
@@ -103,7 +146,16 @@ export function buildOperatorSnapshotEntry(
     sharesOutstanding: null,
     attendanceCount: null,
     attendanceYoyRatio: null,
+    admissionsRevenueCents: null,
+    foodBeverageRevenueCents: null,
+    averageTicketPriceCents: null,
+    foodBeveragePerPatronCents: null,
     revenuePerPatronCents: null,
+    interestExpenseCents: null,
+    operatingCashFlowCents: null,
+    capexCents: null,
+    freeCashFlowCents: null,
+    operatingLeaseCents: null,
   }
 
   const quarterlyRevenues = rows.filter((row) => row.metric === 'revenue' && isQuarterlyFlow(row))
@@ -127,18 +179,40 @@ export function buildOperatorSnapshotEntry(
     rows.filter((row) => row.metric === 'shares_outstanding' && row.periodEnd >= latestQuarterEnd),
   )
 
-  const quarterlyAttendance = rows.filter(
-    (row) => row.metric === 'attendance' && isQuarterlyFlow(row),
-  )
-  const latestAttendanceEnd = quarterlyAttendance.length > 0
-    ? quarterlyAttendance.map((row) => row.periodEnd).reduce((a, b) => (a > b ? a : b))
-    : null
+  const latestFilingMetricEnd = (metric: string): string | null => {
+    const flows = rows.filter((row) => row.metric === metric && isQuarterlyFlow(row))
+    return flows.length > 0
+      ? flows.map((row) => row.periodEnd).reduce((a, b) => (a > b ? a : b))
+      : null
+  }
+
+  const latestAttendanceEnd = latestFilingMetricEnd('attendance')
   const attendance = latestAttendanceEnd
     ? quarterlyFlowAt(rows, 'attendance', latestAttendanceEnd)
     : null
   const revenueForAttendancePeriod = latestAttendanceEnd
     ? quarterlyFlowAt(rows, 'revenue', latestAttendanceEnd)
     : null
+
+  const latestAdmissionsEnd = latestFilingMetricEnd('admissions_revenue')
+  const admissions = latestAdmissionsEnd
+    ? quarterlyFlowAt(rows, 'admissions_revenue', latestAdmissionsEnd)
+    : null
+  const latestFoodBeverageEnd = latestFilingMetricEnd('food_beverage_revenue')
+  const foodBeverage = latestFoodBeverageEnd
+    ? quarterlyFlowAt(rows, 'food_beverage_revenue', latestFoodBeverageEnd)
+    : null
+
+  const perPatron = (revenueRow: OperatorFactRow | null): number | null =>
+    attendance && revenueRow && revenueRow.periodEnd === attendance.periodEnd
+      ? Math.round(revenueRow.value / attendance.value)
+      : null
+
+  const operatingCashFlowCents = quarterlyFlowOrYtdDifference(rows, 'operating_cash_flow', latestQuarterEnd)
+  const capexCents = quarterlyFlowOrYtdDifference(rows, 'capex', latestQuarterEnd)
+
+  const leaseNoncurrent = instantAt(rows, 'operating_lease_noncurrent', latestQuarterEnd)
+  const leaseCurrent = instantAt(rows, 'operating_lease_current', latestQuarterEnd)
 
   return {
     ticker: company.ticker,
@@ -158,8 +232,19 @@ export function buildOperatorSnapshotEntry(
     attendanceYoyRatio: attendance && latestAttendanceEnd
       ? yoyRatio(rows, 'attendance', latestAttendanceEnd, attendance.value)
       : null,
-    revenuePerPatronCents: attendance && revenueForAttendancePeriod
-      ? Math.round(revenueForAttendancePeriod.value / attendance.value)
+    admissionsRevenueCents: admissions?.value ?? null,
+    foodBeverageRevenueCents: foodBeverage?.value ?? null,
+    averageTicketPriceCents: perPatron(admissions),
+    foodBeveragePerPatronCents: perPatron(foodBeverage),
+    revenuePerPatronCents: perPatron(revenueForAttendancePeriod),
+    interestExpenseCents: quarterlyFlowAt(rows, 'interest_expense', latestQuarterEnd)?.value ?? null,
+    operatingCashFlowCents,
+    capexCents,
+    freeCashFlowCents: operatingCashFlowCents !== null && capexCents !== null
+      ? operatingCashFlowCents - capexCents
+      : null,
+    operatingLeaseCents: leaseNoncurrent
+      ? leaseNoncurrent.value + (leaseCurrent?.value ?? 0)
       : null,
   }
 }

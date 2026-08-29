@@ -216,6 +216,7 @@ const recentMarketYears = computed(() =>
             Operator comparison is unavailable.
           </p>
           <template v-else-if="operators && operators.operators.length > 0">
+            <p class="font-medium">Operations & monetization</p>
             <div class="overflow-x-auto">
               <table class="w-full text-left">
                 <thead>
@@ -224,11 +225,12 @@ const recentMarketYears = computed(() =>
                     <th class="py-1 pr-3 font-medium">Quarter</th>
                     <th class="py-1 pr-3 font-medium">Revenue</th>
                     <th class="py-1 pr-3 font-medium">YoY</th>
-                    <th class="py-1 pr-3 font-medium">Net income</th>
                     <th class="py-1 pr-3 font-medium">Attendance</th>
-                    <th class="py-1 pr-3 font-medium">Rev/patron</th>
-                    <th class="py-1 pr-3 font-medium">Cash</th>
-                    <th class="py-1 font-medium">LT debt</th>
+                    <th class="py-1 pr-3 font-medium">Admissions</th>
+                    <th class="py-1 pr-3 font-medium">F&B</th>
+                    <th class="py-1 pr-3 font-medium">Avg ticket</th>
+                    <th class="py-1 pr-3 font-medium">F&B/patron</th>
+                    <th class="py-1 font-medium">Rev/patron</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -237,23 +239,56 @@ const recentMarketYears = computed(() =>
                     <td class="py-1.5 pr-3">{{ operator.latestQuarterLabel ?? '—' }}</td>
                     <td class="py-1.5 pr-3">{{ formatUsdMillions(operator.revenueCents) }}</td>
                     <td class="py-1.5 pr-3">{{ formatSignedRatio(operator.revenueYoyRatio) }}</td>
-                    <td class="py-1.5 pr-3">{{ formatUsdMillions(operator.netIncomeCents) }}</td>
                     <td class="py-1.5 pr-3">
                       {{ formatMillionsCount(operator.attendanceCount) }}<template v-if="operator.attendanceYoyRatio !== null">
                         · {{ formatSignedRatio(operator.attendanceYoyRatio) }}
                       </template>
                     </td>
-                    <td class="py-1.5 pr-3">{{ formatUsdExact(operator.revenuePerPatronCents) }}</td>
+                    <td class="py-1.5 pr-3">{{ formatUsdMillions(operator.admissionsRevenueCents) }}</td>
+                    <td class="py-1.5 pr-3">{{ formatUsdMillions(operator.foodBeverageRevenueCents) }}</td>
+                    <td class="py-1.5 pr-3">{{ formatUsdExact(operator.averageTicketPriceCents) }}</td>
+                    <td class="py-1.5 pr-3">{{ formatUsdExact(operator.foodBeveragePerPatronCents) }}</td>
+                    <td class="py-1.5">{{ formatUsdExact(operator.revenuePerPatronCents) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="pt-2 font-medium">Profitability & financial position</p>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left">
+                <thead>
+                  <tr class="border-b text-muted-foreground">
+                    <th class="py-1 pr-3 font-medium">Company</th>
+                    <th class="py-1 pr-3 font-medium">Net income</th>
+                    <th class="py-1 pr-3 font-medium">Interest</th>
+                    <th class="py-1 pr-3 font-medium">Op cash flow</th>
+                    <th class="py-1 pr-3 font-medium">Capex</th>
+                    <th class="py-1 pr-3 font-medium">FCF</th>
+                    <th class="py-1 pr-3 font-medium">Cash</th>
+                    <th class="py-1 pr-3 font-medium">LT debt</th>
+                    <th class="py-1 font-medium">Op leases</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="operator in operators.operators" :key="operator.ticker" class="border-b last:border-0">
+                    <td class="py-1.5 pr-3">{{ operator.ticker }}</td>
+                    <td class="py-1.5 pr-3">{{ formatUsdMillions(operator.netIncomeCents) }}</td>
+                    <td class="py-1.5 pr-3">{{ formatUsdMillions(operator.interestExpenseCents) }}</td>
+                    <td class="py-1.5 pr-3">{{ formatUsdMillions(operator.operatingCashFlowCents) }}</td>
+                    <td class="py-1.5 pr-3">{{ formatUsdMillions(operator.capexCents) }}</td>
+                    <td class="py-1.5 pr-3">{{ formatUsdMillions(operator.freeCashFlowCents) }}</td>
                     <td class="py-1.5 pr-3">{{ formatUsdMillions(operator.cashCents) }}</td>
-                    <td class="py-1.5">{{ formatUsdMillions(operator.longTermDebtCents) }}</td>
+                    <td class="py-1.5 pr-3">{{ formatUsdMillions(operator.longTermDebtCents) }}</td>
+                    <td class="py-1.5">{{ formatUsdMillions(operator.operatingLeaseCents) }}</td>
                   </tr>
                 </tbody>
               </table>
             </div>
             <p class="text-muted-foreground">
-              Financials come from standardized XBRL company facts; attendance is parsed
-              from 10-Q operating-data tables. Missing cells mean the company did not
-              report the value in recent filings.
+              Financials come from standardized XBRL company facts; attendance and the
+              admissions/F&B revenue split are parsed from 10-Q tables. Per-patron
+              figures are derived only when the periods match. Missing cells mean the
+              company did not report the value in recent filings.
             </p>
           </template>
           <p v-else>
