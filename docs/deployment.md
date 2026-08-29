@@ -24,11 +24,6 @@ Private GitHub Actions minutes: 2,000 / month on Free. Configure a GitHub Action
 
 Do not enable Workers Paid, Queues, Workflows, R2, KV, Browser Run, or Durable Objects unless measured need appears.
 
-## Live deployment
-
-- Worker URL: `https://theater-industry-dashboard.augdrak17.workers.dev`
-- D1 database id: `481d573e-4dc5-448c-b9fd-8984f26a5d74`
-
 ## Required secrets
 
 ### Cloudflare Worker
@@ -37,24 +32,31 @@ Do not enable Workers Paid, Queues, Workflows, R2, KV, Browser Run, or Durable O
 bunx wrangler secret put INGEST_TOKEN
 ```
 
+The production Worker URL stays in GitHub secrets (`INGEST_REMOTE_URL`), not in this file. The D1 database id lives in `wrangler.jsonc` because Wrangler needs it.
+
 ### GitHub repository secrets
 
-Create a Cloudflare API token with **Workers Scripts Edit** and **D1 Edit** for account `7f31ebc0762b0e617ad0cac2a92e66b3`, then set:
+Create a Cloudflare API token with **Workers Scripts Edit** and **D1 Edit**, then set:
 
 ```bash
-gh secret set CLOUDFLARE_API_TOKEN --repo awd17/theater-dashboard
-gh secret set SEC_EDGAR_CONTACT --repo awd17/theater-dashboard
+gh secret set CLOUDFLARE_API_TOKEN
+gh secret set CLOUDFLARE_ACCOUNT_ID
+gh secret set INGEST_REMOTE_URL
+gh secret set INGEST_TOKEN
+gh secret set TMDB_API_KEY
+gh secret set SEC_EDGAR_CONTACT
+gh secret set FIRECRAWL_API_KEY
 ```
 
-| Secret | Purpose | Status |
-| --- | --- | --- |
-| `CLOUDFLARE_API_TOKEN` | Deploy + remote D1 migrations | still required |
-| `CLOUDFLARE_ACCOUNT_ID` | Account scoping for Wrangler | set |
-| `INGEST_REMOTE_URL` | `https://theater-industry-dashboard.augdrak17.workers.dev` | set |
-| `INGEST_TOKEN` | Same value as the Worker secret | set |
-| `TMDB_API_KEY` | Weekly outlook ingest | set |
-| `SEC_EDGAR_CONTACT` | SEC fair-access contact email | still required |
-| `FIRECRAWL_API_KEY` | Optional The Numbers fallback | set |
+| Secret | Purpose |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | Deploy + remote D1 migrations |
+| `CLOUDFLARE_ACCOUNT_ID` | Account scoping for Wrangler |
+| `INGEST_REMOTE_URL` | Production Worker origin for remote ingest |
+| `INGEST_TOKEN` | Same value as the Worker secret |
+| `TMDB_API_KEY` | Weekly outlook ingest |
+| `SEC_EDGAR_CONTACT` | SEC fair-access contact email |
+| `FIRECRAWL_API_KEY` | Optional The Numbers fallback |
 
 Use separate least-privilege Cloudflare tokens for deploy versus day-to-day dashboard login when practical.
 
@@ -81,7 +83,7 @@ bun run ingest:sec
 Remote ingest (writes production D1 through oRPC):
 
 ```bash
-export INGEST_REMOTE_URL=https://theater-industry-dashboard.augdrak17.workers.dev
+export INGEST_REMOTE_URL=https://<worker>.workers.dev
 export INGEST_TOKEN=...
 bun run ingest:the-numbers --daily-from 2026-08-20 --daily-to 2026-08-26 --force-refresh
 ```
