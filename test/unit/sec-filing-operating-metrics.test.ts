@@ -26,6 +26,19 @@ describe('parseFilingOperatingMetrics', () => {
     expect(metric(metrics, 'food_beverage_revenue')?.priorYearQuarter.value).toBe(49_960_000_000)
   })
 
+  it('reads AMC period-end theatre and screen counts as instants', () => {
+    const metrics = parseFilingOperatingMetrics(amcHtml, 'AMC', '2026-06-30')
+    const theatres = metric(metrics, 'theatre_count')
+    const screens = metric(metrics, 'screen_count')
+
+    expect(theatres?.currentQuarter.value).toBe(845)
+    expect(theatres?.priorYearQuarter.value).toBe(864)
+    expect(screens?.currentQuarter.value).toBe(9_530)
+    expect(screens?.currentQuarter.periodStart).toBe('2026-06-30')
+    expect(screens?.currentQuarter.periodEnd).toBe('2026-06-30')
+    expect(screens?.priorYearQuarter.periodEnd).toBe('2025-06-30')
+  })
+
   it('reads Cinemark consolidated attendance and revenue split', () => {
     const metrics = parseFilingOperatingMetrics(cnkHtml, 'CNK', '2026-06-30')
 
@@ -33,6 +46,16 @@ describe('parseFilingOperatingMetrics', () => {
     expect(metric(metrics, 'admissions_revenue')?.currentQuarter.value).toBe(54_000_000_000)
     expect(metric(metrics, 'food_beverage_revenue')?.currentQuarter.value).toBe(43_330_000_000)
     expect(metric(metrics, 'food_beverage_revenue')?.concept).toBe('filing_text:Concession')
+  })
+
+  it('reads Cinemark average screen count as a quarterly figure', () => {
+    const metrics = parseFilingOperatingMetrics(cnkHtml, 'CNK', '2026-06-30')
+    const screens = metric(metrics, 'screen_count')
+
+    expect(screens?.currentQuarter.value).toBe(5_620)
+    expect(screens?.currentQuarter.periodStart).toBe('2026-04-01')
+    expect(screens?.concept).toBe('filing_text:AverageScreenCount')
+    expect(metric(metrics, 'theatre_count')).toBeUndefined()
   })
 
   it('reads Marcus revenue split reported in thousands, with no attendance', () => {

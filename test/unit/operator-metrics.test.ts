@@ -132,6 +132,28 @@ describe('buildOperatorSnapshotEntry', () => {
       expect(splitEntry.foodBeveragePerPatronCents).toBe(Math.round(45_000 / 50_000))
     })
 
+    it('reports theatre and screen counts with attendance per screen', () => {
+      const withCounts = buildOperatorSnapshotEntry(company, [
+        ...rows,
+        flow('attendance', '2026-04-01', '2026-06-30', 50_000),
+        instant('theatre_count', '2026-06-30', 845),
+        instant('screen_count', '2026-06-30', 9_530),
+      ])
+      expect(withCounts.theatreCount).toBe(845)
+      expect(withCounts.screenCount).toBe(9_530)
+      expect(withCounts.attendancePerScreen).toBe(Math.round(50_000 / 9_530))
+    })
+
+    it('accepts quarter-average screen counts and skips per-screen on period mismatch', () => {
+      const averaged = buildOperatorSnapshotEntry(company, [
+        ...rows,
+        flow('attendance', '2026-04-01', '2026-06-30', 50_000),
+        flow('screen_count', '2026-01-01', '2026-03-31', 5_646, '2026-05-01'),
+      ])
+      expect(averaged.screenCount).toBe(5_646)
+      expect(averaged.attendancePerScreen).toBeNull()
+    })
+
     it('skips per-patron derivations when attendance covers a different quarter', () => {
       const mismatched = buildOperatorSnapshotEntry(company, [
         ...rows,

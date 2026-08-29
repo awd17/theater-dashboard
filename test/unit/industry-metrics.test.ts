@@ -200,7 +200,7 @@ describe('buildIndustrySnapshot', () => {
     expect(snapshot.latestDailyTotalCents).toBe(300)
     expect(snapshot.ytdBoxOfficeCents).toBe(450)
     expect(snapshot.priorYearComparableYtdCents).toBe(300)
-    expect(snapshot.yoyGrowthRatio).toBe(1.5)
+    expect(snapshot.yoyGrowthRatio).toBe(0.5)
     expect(snapshot.top10Concentration).toBe(1)
     expect(snapshot.recoveryVs2019Ratio).toBe(0.7)
     expect(snapshot.recoveryPeriodLabel).toBe('2025')

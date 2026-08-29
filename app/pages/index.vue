@@ -82,6 +82,23 @@ function formatUsdExact(cents: number | null | undefined): string {
   return `$${(cents / 100).toFixed(2)}`
 }
 
+function formatCount(count: number | null | undefined): string {
+  if (count === null || count === undefined) {
+    return '—'
+  }
+  return count.toLocaleString('en-US')
+}
+
+function formatTheatresScreens(theatres: number | null, screens: number | null): string {
+  if (theatres === null && screens === null) {
+    return '—'
+  }
+  if (theatres === null) {
+    return formatCount(screens)
+  }
+  return `${formatCount(theatres)} · ${formatCount(screens)}`
+}
+
 const recentMarketYears = computed(() =>
   (industry.value?.marketYears ?? []).slice(-12).reverse(),
 )
@@ -173,7 +190,7 @@ const revenueTrend = computed(() => {
               YTD:
               {{ formatUsd(industry.ytdBoxOfficeCents) }}
               · YoY:
-              {{ formatRatio(industry.yoyGrowthRatio) }}
+              {{ formatSignedRatio(industry.yoyGrowthRatio) }}
             </p>
             <p>
               Top-10 concentration:
@@ -257,6 +274,8 @@ const revenueTrend = computed(() => {
                     <th class="py-1 pr-3 font-medium">Revenue</th>
                     <th class="py-1 pr-3 font-medium">YoY</th>
                     <th class="py-1 pr-3 font-medium">Attendance</th>
+                    <th class="py-1 pr-3 font-medium">Theatres · Screens</th>
+                    <th class="py-1 pr-3 font-medium">Att/screen</th>
                     <th class="py-1 pr-3 font-medium">Admissions</th>
                     <th class="py-1 pr-3 font-medium">F&B</th>
                     <th class="py-1 pr-3 font-medium">Avg ticket</th>
@@ -275,6 +294,8 @@ const revenueTrend = computed(() => {
                         · {{ formatSignedRatio(operator.attendanceYoyRatio) }}
                       </template>
                     </td>
+                    <td class="py-1.5 pr-3">{{ formatTheatresScreens(operator.theatreCount, operator.screenCount) }}</td>
+                    <td class="py-1.5 pr-3">{{ formatCount(operator.attendancePerScreen) }}</td>
                     <td class="py-1.5 pr-3">{{ formatUsdMillions(operator.admissionsRevenueCents) }}</td>
                     <td class="py-1.5 pr-3">{{ formatUsdMillions(operator.foodBeverageRevenueCents) }}</td>
                     <td class="py-1.5 pr-3">{{ formatUsdExact(operator.averageTicketPriceCents) }}</td>
@@ -339,10 +360,12 @@ const revenueTrend = computed(() => {
               </div>
             </template>
             <p class="text-muted-foreground">
-              Financials come from standardized XBRL company facts; attendance and the
-              admissions/F&B revenue split are parsed from 10-Q tables. Per-patron
-              figures are derived only when the periods match. Missing cells mean the
-              company did not report the value in recent filings.
+              Financials come from standardized XBRL company facts; attendance, the
+              admissions/F&B revenue split, and theatre/screen counts are parsed from
+              10-Q tables. AMC screens are period-end counts while Cinemark reports a
+              quarterly average. Per-patron and per-screen figures are derived only when
+              the periods match. Missing cells mean the company did not report the value
+              in recent filings.
             </p>
           </template>
           <p v-else>

@@ -250,7 +250,7 @@ export function buildIndustrySnapshot(
     ytdBoxOfficeCents !== null
     && priorYearComparableYtdCents !== null
     && priorYearComparableYtdCents !== 0
-      ? ytdBoxOfficeCents / priorYearComparableYtdCents
+      ? ytdBoxOfficeCents / priorYearComparableYtdCents - 1
       : null
 
   const recovery = computeRecoveryVs2019(marketPeriods)

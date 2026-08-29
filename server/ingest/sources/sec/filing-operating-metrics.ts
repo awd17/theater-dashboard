@@ -17,6 +17,8 @@ export interface FilingOperatingMetric {
 
 type PairPick = 'first_pair' | 'consolidated_group'
 
+type PeriodShape = 'quarter' | 'instant'
+
 interface FilingRowConfig {
   metric: string
   concept: string
@@ -24,12 +26,15 @@ interface FilingRowConfig {
   unit: 'count' | 'usd_cents'
   scale: number
   pick: PairPick
+  periodShape: PeriodShape
   minValue: number
   maxValue: number
 }
 
 const ATTENDANCE_BOUNDS = { minValue: 1_000_000, maxValue: 500_000_000 }
 const QUARTERLY_REVENUE_CENTS_BOUNDS = { minValue: 100_000_000, maxValue: 1_000_000_000_000 }
+const THEATRE_COUNT_BOUNDS = { minValue: 10, maxValue: 5_000 }
+const SCREEN_COUNT_BOUNDS = { minValue: 100, maxValue: 50_000 }
 
 const MILLIONS_TO_CENTS = 100_000_000
 const THOUSANDS_TO_CENTS = 100_000
@@ -43,6 +48,7 @@ const companyConfigs: Record<string, FilingRowConfig[]> = {
       unit: 'count',
       scale: 1_000,
       pick: 'first_pair',
+      periodShape: 'quarter',
       ...ATTENDANCE_BOUNDS,
     },
     {
@@ -52,6 +58,7 @@ const companyConfigs: Record<string, FilingRowConfig[]> = {
       unit: 'usd_cents',
       scale: MILLIONS_TO_CENTS,
       pick: 'first_pair',
+      periodShape: 'quarter',
       ...QUARTERLY_REVENUE_CENTS_BOUNDS,
     },
     {
@@ -61,7 +68,28 @@ const companyConfigs: Record<string, FilingRowConfig[]> = {
       unit: 'usd_cents',
       scale: MILLIONS_TO_CENTS,
       pick: 'first_pair',
+      periodShape: 'quarter',
       ...QUARTERLY_REVENUE_CENTS_BOUNDS,
+    },
+    {
+      metric: 'theatre_count',
+      concept: 'filing_text:NumberOfTheatresOperated',
+      labelPattern: /^Number of theatres operated$/i,
+      unit: 'count',
+      scale: 1,
+      pick: 'first_pair',
+      periodShape: 'instant',
+      ...THEATRE_COUNT_BOUNDS,
+    },
+    {
+      metric: 'screen_count',
+      concept: 'filing_text:NumberOfScreensOperated',
+      labelPattern: /^Number of screens operated$/i,
+      unit: 'count',
+      scale: 1,
+      pick: 'first_pair',
+      periodShape: 'instant',
+      ...SCREEN_COUNT_BOUNDS,
     },
   ],
   CNK: [
@@ -72,6 +100,7 @@ const companyConfigs: Record<string, FilingRowConfig[]> = {
       unit: 'count',
       scale: 1_000_000,
       pick: 'consolidated_group',
+      periodShape: 'quarter',
       ...ATTENDANCE_BOUNDS,
     },
     {
@@ -81,6 +110,7 @@ const companyConfigs: Record<string, FilingRowConfig[]> = {
       unit: 'usd_cents',
       scale: MILLIONS_TO_CENTS,
       pick: 'first_pair',
+      periodShape: 'quarter',
       ...QUARTERLY_REVENUE_CENTS_BOUNDS,
     },
     {
@@ -90,7 +120,18 @@ const companyConfigs: Record<string, FilingRowConfig[]> = {
       unit: 'usd_cents',
       scale: MILLIONS_TO_CENTS,
       pick: 'first_pair',
+      periodShape: 'quarter',
       ...QUARTERLY_REVENUE_CENTS_BOUNDS,
+    },
+    {
+      metric: 'screen_count',
+      concept: 'filing_text:AverageScreenCount',
+      labelPattern: /^Average screen count/i,
+      unit: 'count',
+      scale: 1,
+      pick: 'first_pair',
+      periodShape: 'quarter',
+      ...SCREEN_COUNT_BOUNDS,
     },
   ],
   MCS: [
@@ -101,6 +142,7 @@ const companyConfigs: Record<string, FilingRowConfig[]> = {
       unit: 'usd_cents',
       scale: THOUSANDS_TO_CENTS,
       pick: 'first_pair',
+      periodShape: 'quarter',
       ...QUARTERLY_REVENUE_CENTS_BOUNDS,
     },
     {
@@ -110,6 +152,7 @@ const companyConfigs: Record<string, FilingRowConfig[]> = {
       unit: 'usd_cents',
       scale: THOUSANDS_TO_CENTS,
       pick: 'first_pair',
+      periodShape: 'quarter',
       ...QUARTERLY_REVENUE_CENTS_BOUNDS,
     },
   ],
@@ -212,13 +255,14 @@ export function parseFilingOperatingMetrics(
       continue
     }
 
+    const currentStart = config.periodShape === 'instant' ? reportDate : periodStart
     metrics.push({
       metric: config.metric,
       concept: config.concept,
       unit: config.unit,
-      currentQuarter: { periodStart, periodEnd: reportDate, value: current },
+      currentQuarter: { periodStart: currentStart, periodEnd: reportDate, value: current },
       priorYearQuarter: {
-        periodStart: shiftYears(periodStart, -1),
+        periodStart: shiftYears(currentStart, -1),
         periodEnd: shiftYears(reportDate, -1),
         value: prior,
       },

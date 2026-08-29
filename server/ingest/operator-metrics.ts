@@ -31,6 +31,9 @@ export interface OperatorSnapshotEntry {
   averageTicketPriceCents: number | null
   foodBeveragePerPatronCents: number | null
   revenuePerPatronCents: number | null
+  theatreCount: number | null
+  screenCount: number | null
+  attendancePerScreen: number | null
   interestExpenseCents: number | null
   operatingCashFlowCents: number | null
   capexCents: number | null
@@ -201,6 +204,9 @@ export function buildOperatorSnapshotEntry(
     averageTicketPriceCents: null,
     foodBeveragePerPatronCents: null,
     revenuePerPatronCents: null,
+    theatreCount: null,
+    screenCount: null,
+    attendancePerScreen: null,
     interestExpenseCents: null,
     operatingCashFlowCents: null,
     capexCents: null,
@@ -258,6 +264,21 @@ export function buildOperatorSnapshotEntry(
       ? Math.round(revenueRow.value / attendance.value)
       : null
 
+  const latestCount = (metric: string): OperatorFactRow | null => {
+    const counts = rows.filter((row) => row.metric === metric)
+    if (counts.length === 0) {
+      return null
+    }
+    const latestEnd = counts.map((row) => row.periodEnd).reduce((a, b) => (a > b ? a : b))
+    return latestFiled(counts.filter((row) => row.periodEnd === latestEnd))
+  }
+
+  const theatres = latestCount('theatre_count')
+  const screens = latestCount('screen_count')
+  const attendancePerScreen = attendance && screens && screens.periodEnd === attendance.periodEnd
+    ? Math.round(attendance.value / screens.value)
+    : null
+
   const operatingCashFlowCents = quarterlyFlowOrYtdDifference(rows, 'operating_cash_flow', latestQuarterEnd)
   const capexCents = quarterlyFlowOrYtdDifference(rows, 'capex', latestQuarterEnd)
 
@@ -287,6 +308,9 @@ export function buildOperatorSnapshotEntry(
     averageTicketPriceCents: perPatron(admissions),
     foodBeveragePerPatronCents: perPatron(foodBeverage),
     revenuePerPatronCents: perPatron(revenueForAttendancePeriod),
+    theatreCount: theatres?.value ?? null,
+    screenCount: screens?.value ?? null,
+    attendancePerScreen,
     interestExpenseCents: quarterlyFlowAt(rows, 'interest_expense', latestQuarterEnd)?.value ?? null,
     operatingCashFlowCents,
     capexCents,

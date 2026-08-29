@@ -81,9 +81,12 @@ async function ingestFilingMetrics(
   const summary = metrics
     .map((metric) => {
       const value = metric.currentQuarter.value
-      return metric.unit === 'count'
+      if (metric.unit !== 'count') {
+        return `${metric.metric}=$${(value / 1e8).toFixed(1)}M`
+      }
+      return value >= 1e6
         ? `${metric.metric}=${(value / 1e6).toFixed(1)}M`
-        : `${metric.metric}=$${(value / 1e8).toFixed(1)}M`
+        : `${metric.metric}=${value.toLocaleString('en-US')}`
     })
     .join(' ')
   console.log(`${company.ticker}: filing metrics ${summary}`)
