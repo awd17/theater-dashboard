@@ -19,6 +19,9 @@ export const operatorSnapshotSchema = z.object({
       cashCents: z.number().int().nullable(),
       longTermDebtCents: z.number().int().nullable(),
       sharesOutstanding: z.number().int().nullable(),
+      attendanceCount: z.number().int().nullable(),
+      attendanceYoyRatio: z.number().nullable(),
+      revenuePerPatronCents: z.number().int().nullable(),
     }),
   ),
 })

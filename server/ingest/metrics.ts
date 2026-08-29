@@ -14,6 +14,15 @@ export interface MarketPeriodRow {
   isPartial: boolean | null
 }
 
+export interface MarketYearEntry {
+  periodLabel: string
+  boxOfficeCents: number | null
+  ticketsSold: number | null
+  averageTicketPriceCents: number | null
+  isPartial: boolean | null
+  yoyGrowthRatio: number | null
+}
+
 export interface IndustrySnapshot {
   latestObservationDate: string | null
   latestDailyTotalCents: number | null
@@ -31,6 +40,32 @@ export interface IndustrySnapshot {
     averageTicketPriceCents: number | null
     isPartial: boolean | null
   } | null
+  marketYears: MarketYearEntry[]
+}
+
+export function buildMarketYearHistory(periods: MarketPeriodRow[]): MarketYearEntry[] {
+  const sorted = [...periods].sort((a, b) => a.periodLabel.localeCompare(b.periodLabel))
+  const boxOfficeByLabel = new Map(
+    sorted.map((period) => [period.periodLabel, period.boxOfficeCents]),
+  )
+
+  return sorted.map((period) => {
+    const priorLabel = String(Number(period.periodLabel) - 1)
+    const prior = boxOfficeByLabel.get(priorLabel) ?? null
+    const yoyGrowthRatio =
+      period.boxOfficeCents !== null && prior !== null && prior !== 0
+        ? period.boxOfficeCents / prior - 1
+        : null
+
+    return {
+      periodLabel: period.periodLabel,
+      boxOfficeCents: period.boxOfficeCents,
+      ticketsSold: period.ticketsSold,
+      averageTicketPriceCents: period.averageTicketPriceCents,
+      isPartial: period.isPartial,
+      yoyGrowthRatio,
+    }
+  })
 }
 
 function sumGross(rows: DailyGrossRow[], datePrefix?: string): number | null {
@@ -172,5 +207,6 @@ export function buildIndustrySnapshot(
           isPartial: latestMarket.isPartial,
         }
       : null,
+    marketYears: buildMarketYearHistory(marketPeriods),
   }
 }

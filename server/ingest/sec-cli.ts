@@ -2,10 +2,18 @@ import { openLocalDatabase } from './local-db'
 import { parseCompanyFacts } from './sources/sec/company-facts'
 import {
   companyFactsUrl,
+  filingDocumentUrl,
   SEC_COMPANIES,
   SEC_SOURCE,
   secUserAgent,
+  submissionsUrl,
+  type SecCompany,
 } from './sources/sec/constants'
+import {
+  attendanceStrategyExists,
+  parseFilingAttendance,
+} from './sources/sec/filing-attendance'
+import { findLatestFiling } from './sources/sec/submissions'
 import {
   finishIngestRun,
   resolveCompanyId,
@@ -14,6 +22,66 @@ import {
 } from './upsert'
 
 const REQUEST_INTERVAL_MS = 500
+
+async function fetchSec(url: string, accept: string): Promise<Response> {
+  const response = await fetch(url, {
+    headers: { 'user-agent': secUserAgent(), accept },
+  })
+  if (!response.ok) {
+    throw new Error(`SEC request ${url} failed with status ${response.status}`)
+  }
+  return response
+}
+
+async function ingestAttendance(
+  db: Awaited<ReturnType<typeof openLocalDatabase>>,
+  company: SecCompany,
+  companyId: number,
+): Promise<{ urls: number, rows: number }> {
+  if (!attendanceStrategyExists(company.ticker)) {
+    console.log(`${company.ticker}: attendance not disclosed in filings, skipping`)
+    return { urls: 0, rows: 0 }
+  }
+
+  const submissions = await (await fetchSec(submissionsUrl(company.cik), 'application/json')).json()
+  const filing = findLatestFiling(submissions, ['10-Q'])
+  if (!filing) {
+    console.log(`${company.ticker}: no recent 10-Q found`)
+    return { urls: 1, rows: 0 }
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, REQUEST_INTERVAL_MS))
+  const documentUrl = filingDocumentUrl(company.cik, filing.accession, filing.primaryDocument)
+  const html = await (await fetchSec(documentUrl, 'text/html')).text()
+  const retrievedAt = new Date().toISOString()
+
+  const attendance = parseFilingAttendance(html, company.ticker, filing.reportDate)
+  if (!attendance) {
+    console.log(`${company.ticker}: attendance table not found in ${filing.form} ${filing.accession}`)
+    return { urls: 2, rows: 0 }
+  }
+
+  const facts = [attendance.currentQuarter, attendance.priorYearQuarter].map((quarter) => ({
+    metric: 'attendance',
+    concept: 'filing_text:Attendance',
+    unit: 'count',
+    periodStart: quarter.periodStart,
+    periodEnd: quarter.periodEnd,
+    value: quarter.value,
+    fiscalYear: null,
+    fiscalPeriod: null,
+    form: filing.form,
+    filedDate: filing.filingDate,
+    accession: filing.accession,
+  }))
+
+  const rows = await upsertCompanyFacts(db, companyId, facts, documentUrl, retrievedAt)
+  console.log(
+    `${company.ticker}: attendance ${(attendance.currentQuarter.value / 1e6).toFixed(1)}M`
+    + ` (prior year ${(attendance.priorYearQuarter.value / 1e6).toFixed(1)}M)`,
+  )
+  return { urls: 2, rows }
+}
 
 async function main(): Promise<void> {
   const db = openLocalDatabase()
@@ -27,12 +95,7 @@ async function main(): Promise<void> {
   try {
     for (const company of SEC_COMPANIES) {
       const url = companyFactsUrl(company.cik)
-      const response = await fetch(url, {
-        headers: { 'user-agent': secUserAgent(), accept: 'application/json' },
-      })
-      if (!response.ok) {
-        throw new Error(`SEC companyfacts for ${company.ticker} failed with status ${response.status}`)
-      }
+      const response = await fetchSec(url, 'application/json')
       urlCount += 1
       const retrievedAt = new Date().toISOString()
 
@@ -42,6 +105,11 @@ async function main(): Promise<void> {
       rowCount += upserted
 
       console.log(`${company.ticker} (${parsed.entityName}): ${upserted} facts`)
+      await new Promise((resolve) => setTimeout(resolve, REQUEST_INTERVAL_MS))
+
+      const attendanceResult = await ingestAttendance(db, company, companyId)
+      urlCount += attendanceResult.urls
+      rowCount += attendanceResult.rows
       await new Promise((resolve) => setTimeout(resolve, REQUEST_INTERVAL_MS))
     }
 

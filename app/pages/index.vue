@@ -47,6 +47,39 @@ function formatRatio(ratio: number | null | undefined): string {
   }
   return `${(ratio * 100).toFixed(1)}%`
 }
+
+function formatSignedRatio(ratio: number | null | undefined): string {
+  if (ratio === null || ratio === undefined) {
+    return '—'
+  }
+  const formatted = `${(ratio * 100).toFixed(1)}%`
+  return ratio > 0 ? `+${formatted}` : formatted
+}
+
+function formatBillions(cents: number | null | undefined): string {
+  if (cents === null || cents === undefined) {
+    return '—'
+  }
+  return `$${(cents / 100 / 1_000_000_000).toFixed(2)}B`
+}
+
+function formatMillionsCount(count: number | null | undefined): string {
+  if (count === null || count === undefined) {
+    return '—'
+  }
+  return `${(count / 1_000_000).toLocaleString('en-US', { maximumFractionDigits: 1 })}M`
+}
+
+function formatUsdExact(cents: number | null | undefined): string {
+  if (cents === null || cents === undefined) {
+    return '—'
+  }
+  return `$${(cents / 100).toFixed(2)}`
+}
+
+const recentMarketYears = computed(() =>
+  (industry.value?.marketYears ?? []).slice(-12).reverse(),
+)
 </script>
 
 <template>
@@ -192,6 +225,8 @@ function formatRatio(ratio: number | null | undefined): string {
                     <th class="py-1 pr-3 font-medium">Revenue</th>
                     <th class="py-1 pr-3 font-medium">YoY</th>
                     <th class="py-1 pr-3 font-medium">Net income</th>
+                    <th class="py-1 pr-3 font-medium">Attendance</th>
+                    <th class="py-1 pr-3 font-medium">Rev/patron</th>
                     <th class="py-1 pr-3 font-medium">Cash</th>
                     <th class="py-1 font-medium">LT debt</th>
                   </tr>
@@ -201,8 +236,14 @@ function formatRatio(ratio: number | null | undefined): string {
                     <td class="py-1.5 pr-3">{{ operator.ticker }}</td>
                     <td class="py-1.5 pr-3">{{ operator.latestQuarterLabel ?? '—' }}</td>
                     <td class="py-1.5 pr-3">{{ formatUsdMillions(operator.revenueCents) }}</td>
-                    <td class="py-1.5 pr-3">{{ formatRatio(operator.revenueYoyRatio) }}</td>
+                    <td class="py-1.5 pr-3">{{ formatSignedRatio(operator.revenueYoyRatio) }}</td>
                     <td class="py-1.5 pr-3">{{ formatUsdMillions(operator.netIncomeCents) }}</td>
+                    <td class="py-1.5 pr-3">
+                      {{ formatMillionsCount(operator.attendanceCount) }}<template v-if="operator.attendanceYoyRatio !== null">
+                        · {{ formatSignedRatio(operator.attendanceYoyRatio) }}
+                      </template>
+                    </td>
+                    <td class="py-1.5 pr-3">{{ formatUsdExact(operator.revenuePerPatronCents) }}</td>
                     <td class="py-1.5 pr-3">{{ formatUsdMillions(operator.cashCents) }}</td>
                     <td class="py-1.5">{{ formatUsdMillions(operator.longTermDebtCents) }}</td>
                   </tr>
@@ -210,12 +251,63 @@ function formatRatio(ratio: number | null | undefined): string {
               </table>
             </div>
             <p class="text-muted-foreground">
-              Values come from standardized XBRL company facts; missing cells mean the
-              company did not tag the concept in recent filings.
+              Financials come from standardized XBRL company facts; attendance is parsed
+              from 10-Q operating-data tables. Missing cells mean the company did not
+              report the value in recent filings.
             </p>
           </template>
           <p v-else>
             No operator data ingested yet.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Annual market history</CardTitle>
+          <CardDescription>
+            Domestic box-office years from The Numbers market pages.
+          </CardDescription>
+        </CardHeader>
+        <CardContent class="space-y-3 text-sm">
+          <p v-if="industryStatus === 'pending'">
+            Loading market history...
+          </p>
+          <p v-else-if="industryError">
+            Market history is unavailable.
+          </p>
+          <template v-else-if="recentMarketYears.length > 0">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left">
+                <thead>
+                  <tr class="border-b text-muted-foreground">
+                    <th class="py-1 pr-3 font-medium">Year</th>
+                    <th class="py-1 pr-3 font-medium">Box office</th>
+                    <th class="py-1 pr-3 font-medium">YoY</th>
+                    <th class="py-1 pr-3 font-medium">Tickets</th>
+                    <th class="py-1 font-medium">Avg price</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="year in recentMarketYears" :key="year.periodLabel" class="border-b last:border-0">
+                    <td class="py-1.5 pr-3">
+                      {{ year.periodLabel }}<span v-if="year.isPartial" class="text-muted-foreground"> (partial)</span>
+                    </td>
+                    <td class="py-1.5 pr-3">{{ formatBillions(year.boxOfficeCents) }}</td>
+                    <td class="py-1.5 pr-3">{{ formatSignedRatio(year.yoyGrowthRatio) }}</td>
+                    <td class="py-1.5 pr-3">{{ formatMillionsCount(year.ticketsSold) }}</td>
+                    <td class="py-1.5">{{ formatUsdExact(year.averageTicketPriceCents) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="text-muted-foreground">
+              Totals aggregate each year's top-grossing chart on The Numbers, so early
+              years with fewer tracked titles understate the full market.
+            </p>
+          </template>
+          <p v-else>
+            No market history ingested yet.
           </p>
         </CardContent>
       </Card>

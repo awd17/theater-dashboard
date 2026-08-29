@@ -75,4 +75,40 @@ describe('buildOperatorSnapshotEntry', () => {
     expect(entryEmpty.latestQuarterEnd).toBeNull()
     expect(entryEmpty.revenueCents).toBeNull()
   })
+
+  describe('attendance', () => {
+    const withAttendance = [
+      ...rows,
+      flow('attendance', '2026-04-01', '2026-06-30', 75_000_000),
+      flow('attendance', '2025-04-01', '2025-06-30', 60_000_000),
+    ]
+    const attendanceEntry = buildOperatorSnapshotEntry(company, withAttendance)
+
+    it('reports latest quarterly attendance with year-over-year growth', () => {
+      expect(attendanceEntry.attendanceCount).toBe(75_000_000)
+      expect(attendanceEntry.attendanceYoyRatio).toBeCloseTo(0.25, 10)
+    })
+
+    it('computes revenue per patron from the matching quarter', () => {
+      expect(attendanceEntry.revenuePerPatronCents).toBe(Math.round(150_000 / 75_000_000))
+    })
+
+    it('keeps fresher attendance even when revenue lags a quarter behind', () => {
+      const lagged = buildOperatorSnapshotEntry(company, [
+        flow('revenue', '2026-01-01', '2026-03-31', 100_000, '2026-05-01'),
+        flow('attendance', '2026-04-01', '2026-06-30', 50_000_000),
+        flow('attendance', '2025-04-01', '2025-06-30', 40_000_000),
+      ])
+      expect(lagged.latestQuarterEnd).toBe('2026-03-31')
+      expect(lagged.attendanceCount).toBe(50_000_000)
+      expect(lagged.attendanceYoyRatio).toBeCloseTo(0.25, 10)
+      expect(lagged.revenuePerPatronCents).toBeNull()
+    })
+
+    it('leaves attendance fields null when no attendance facts exist', () => {
+      expect(entry.attendanceCount).toBeNull()
+      expect(entry.attendanceYoyRatio).toBeNull()
+      expect(entry.revenuePerPatronCents).toBeNull()
+    })
+  })
 })

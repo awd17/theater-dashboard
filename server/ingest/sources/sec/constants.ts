@@ -50,9 +50,17 @@ export function companyFactsUrl(cik: string): string {
   return `https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`
 }
 
+export function submissionsUrl(cik: string): string {
+  return `https://data.sec.gov/submissions/CIK${cik}.json`
+}
+
+export function filingDocumentUrl(cik: string, accession: string, document: string): string {
+  const cikNumber = Number(cik)
+  const accessionNoDashes = accession.replaceAll('-', '')
+  return `https://www.sec.gov/Archives/edgar/data/${cikNumber}/${accessionNoDashes}/${document}`
+}
+
 export function secUserAgent(): string {
-  const contact = process.env.SEC_EDGAR_CONTACT
-  return contact
-    ? `theater-industry-dashboard/0.1 (${contact})`
-    : 'theater-industry-dashboard/0.1 (local research tool)'
+  const contact = process.env.SEC_EDGAR_CONTACT ?? 'unconfigured@example.com'
+  return `theater-industry-dashboard/0.1 (${contact})`
 }

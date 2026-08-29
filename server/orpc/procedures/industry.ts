@@ -29,6 +29,16 @@ export const industrySnapshotSchema = z.object({
       isPartial: z.boolean().nullable(),
     })
     .nullable(),
+  marketYears: z.array(
+    z.object({
+      periodLabel: z.string(),
+      boxOfficeCents: z.number().int().nullable(),
+      ticketsSold: z.number().int().nullable(),
+      averageTicketPriceCents: z.number().int().nullable(),
+      isPartial: z.boolean().nullable(),
+      yoyGrowthRatio: z.number().nullable(),
+    }),
+  ),
 })
 
 export type IndustrySnapshotResult = z.infer<typeof industrySnapshotSchema>
@@ -44,6 +54,7 @@ const emptySnapshot: IndustrySnapshotResult = {
   recoveryPeriodLabel: null,
   recoveryBaselinePeriodLabel: '2019',
   latestMarketYear: null,
+  marketYears: [],
 }
 
 export const snapshot = pub

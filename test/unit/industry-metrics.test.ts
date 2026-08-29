@@ -1,11 +1,55 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildIndustrySnapshot,
+  buildMarketYearHistory,
   computeRecoveryVs2019,
   computeTop10Concentration,
   type DailyGrossRow,
   type MarketPeriodRow,
 } from '../../server/ingest/metrics'
+
+describe('buildMarketYearHistory', () => {
+  const year = (
+    periodLabel: string,
+    boxOfficeCents: number | null,
+    isPartial = false,
+  ): MarketPeriodRow => ({
+    periodLabel,
+    boxOfficeCents,
+    ticketsSold: 100,
+    averageTicketPriceCents: 10_000,
+    isPartial,
+  })
+
+  it('sorts years ascending and computes year-over-year growth', () => {
+    const history = buildMarketYearHistory([
+      year('2025', 1_100_000),
+      year('2023', 900_000),
+      year('2024', 1_000_000),
+    ])
+
+    expect(history.map((entry) => entry.periodLabel)).toEqual(['2023', '2024', '2025'])
+    expect(history[0]!.yoyGrowthRatio).toBeNull()
+    expect(history[1]!.yoyGrowthRatio).toBeCloseTo(1 / 9, 10)
+    expect(history[2]!.yoyGrowthRatio).toBeCloseTo(0.1, 10)
+  })
+
+  it('skips growth across gaps and missing box office values', () => {
+    const history = buildMarketYearHistory([
+      year('2020', null),
+      year('2021', 500_000),
+      year('2023', 800_000),
+    ])
+
+    expect(history.find((entry) => entry.periodLabel === '2021')!.yoyGrowthRatio).toBeNull()
+    expect(history.find((entry) => entry.periodLabel === '2023')!.yoyGrowthRatio).toBeNull()
+  })
+
+  it('keeps the partial flag on the current year', () => {
+    const history = buildMarketYearHistory([year('2026', 700_000, true)])
+    expect(history[0]!.isPartial).toBe(true)
+  })
+})
 
 describe('computeTop10Concentration', () => {
   it('returns the share of daily gross earned by the top 10 films', () => {
