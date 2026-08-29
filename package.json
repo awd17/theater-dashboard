@@ -15,7 +15,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "wrangler d1 migrations apply theater-industry-dashboard --local",
     "ingest:the-numbers": "bun run server/ingest/cli.ts",
-    "ingest:tmdb": "bun run server/ingest/tmdb-cli.ts"
+    "ingest:tmdb": "bun run server/ingest/tmdb-cli.ts",
+    "ingest:sec": "bun run server/ingest/sec-cli.ts"
   },
   "dependencies": {
     "@lucide/vue": "^1.35.0",

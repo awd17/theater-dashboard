@@ -1,6 +1,8 @@
 import { and, eq } from 'drizzle-orm'
 import {
   boxOfficeDaily,
+  companies,
+  companyFacts,
   ingestRun,
   marketPeriod,
   movieExternalIds,
@@ -215,6 +217,79 @@ export async function upsertUpcomingReleases(
         },
       })
 
+    rowCount += 1
+  }
+
+  return rowCount
+}
+
+export async function resolveCompanyId(
+  db: LocalDatabase,
+  company: { ticker: string, name: string, cik: string },
+): Promise<number> {
+  const existing = await db
+    .select({ id: companies.id })
+    .from(companies)
+    .where(eq(companies.ticker, company.ticker))
+    .get()
+
+  if (existing) {
+    return existing.id
+  }
+
+  const inserted = await db
+    .insert(companies)
+    .values(company)
+    .returning({ id: companies.id })
+    .get()
+
+  return inserted.id
+}
+
+export async function upsertCompanyFacts(
+  db: LocalDatabase,
+  companyId: number,
+  facts: Array<{
+    metric: string
+    concept: string
+    unit: string
+    periodStart: string
+    periodEnd: string
+    value: number
+    fiscalYear: number | null
+    fiscalPeriod: string | null
+    form: string
+    filedDate: string
+    accession: string
+  }>,
+  sourceUrl: string,
+  retrievedAt: string,
+): Promise<number> {
+  let rowCount = 0
+
+  for (const fact of facts) {
+    await db
+      .insert(companyFacts)
+      .values({ ...fact, companyId, sourceUrl, retrievedAt })
+      .onConflictDoUpdate({
+        target: [
+          companyFacts.companyId,
+          companyFacts.concept,
+          companyFacts.unit,
+          companyFacts.periodStart,
+          companyFacts.periodEnd,
+          companyFacts.accession,
+        ],
+        set: {
+          value: fact.value,
+          fiscalYear: fact.fiscalYear,
+          fiscalPeriod: fact.fiscalPeriod,
+          form: fact.form,
+          filedDate: fact.filedDate,
+          sourceUrl,
+          retrievedAt,
+        },
+      })
     rowCount += 1
   }
 

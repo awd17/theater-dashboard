@@ -18,6 +18,11 @@ const { data: outlook, error: outlookError, status: outlookStatus } = await useA
   () => orpc.outlook.snapshot({ asOfDate: today }),
 )
 
+const { data: operators, error: operatorsError, status: operatorsStatus } = await useAsyncData(
+  'operators-snapshot',
+  () => orpc.operators.snapshot(),
+)
+
 function formatUsd(cents: number | null | undefined): string {
   if (cents === null || cents === undefined) {
     return '—'
@@ -27,6 +32,13 @@ function formatUsd(cents: number | null | undefined): string {
     currency: 'USD',
     maximumFractionDigits: 0,
   }).format(cents / 100)
+}
+
+function formatUsdMillions(cents: number | null | undefined): string {
+  if (cents === null || cents === undefined) {
+    return '—'
+  }
+  return `$${(cents / 100 / 1_000_000).toLocaleString('en-US', { maximumFractionDigits: 1 })}M`
 }
 
 function formatRatio(ratio: number | null | undefined): string {
@@ -153,6 +165,58 @@ function formatRatio(ratio: number | null | undefined): string {
               wide status after opening.
             </p>
           </template>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Operators</CardTitle>
+          <CardDescription>
+            Latest reported quarter per exhibitor from SEC EDGAR filings.
+          </CardDescription>
+        </CardHeader>
+        <CardContent class="space-y-3 text-sm">
+          <p v-if="operatorsStatus === 'pending'">
+            Loading operators...
+          </p>
+          <p v-else-if="operatorsError">
+            Operator comparison is unavailable.
+          </p>
+          <template v-else-if="operators && operators.operators.length > 0">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left">
+                <thead>
+                  <tr class="border-b text-muted-foreground">
+                    <th class="py-1 pr-3 font-medium">Company</th>
+                    <th class="py-1 pr-3 font-medium">Quarter</th>
+                    <th class="py-1 pr-3 font-medium">Revenue</th>
+                    <th class="py-1 pr-3 font-medium">YoY</th>
+                    <th class="py-1 pr-3 font-medium">Net income</th>
+                    <th class="py-1 pr-3 font-medium">Cash</th>
+                    <th class="py-1 font-medium">LT debt</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="operator in operators.operators" :key="operator.ticker" class="border-b last:border-0">
+                    <td class="py-1.5 pr-3">{{ operator.ticker }}</td>
+                    <td class="py-1.5 pr-3">{{ operator.latestQuarterLabel ?? '—' }}</td>
+                    <td class="py-1.5 pr-3">{{ formatUsdMillions(operator.revenueCents) }}</td>
+                    <td class="py-1.5 pr-3">{{ formatRatio(operator.revenueYoyRatio) }}</td>
+                    <td class="py-1.5 pr-3">{{ formatUsdMillions(operator.netIncomeCents) }}</td>
+                    <td class="py-1.5 pr-3">{{ formatUsdMillions(operator.cashCents) }}</td>
+                    <td class="py-1.5">{{ formatUsdMillions(operator.longTermDebtCents) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="text-muted-foreground">
+              Values come from standardized XBRL company facts; missing cells mean the
+              company did not tag the concept in recent filings.
+            </p>
+          </template>
+          <p v-else>
+            No operator data ingested yet.
+          </p>
         </CardContent>
       </Card>
     </div>

@@ -126,6 +126,53 @@ export const upcomingReleases = sqliteTable(
   ],
 )
 
+export const companies = sqliteTable('companies', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  ticker: text('ticker').notNull().unique(),
+  name: text('name').notNull(),
+  cik: text('cik').notNull().unique(),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+})
+
+export const companyFacts = sqliteTable(
+  'company_facts',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    companyId: integer('company_id')
+      .notNull()
+      .references(() => companies.id),
+    metric: text('metric').notNull(),
+    concept: text('concept').notNull(),
+    unit: text('unit').notNull(),
+    periodStart: text('period_start').notNull(),
+    periodEnd: text('period_end').notNull(),
+    value: integer('value').notNull(),
+    fiscalYear: integer('fiscal_year'),
+    fiscalPeriod: text('fiscal_period'),
+    form: text('form').notNull(),
+    filedDate: text('filed_date').notNull(),
+    accession: text('accession').notNull(),
+    sourceUrl: text('source_url').notNull(),
+    retrievedAt: text('retrieved_at').notNull(),
+    createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  },
+  (table) => [
+    uniqueIndex('company_facts_concept_period_accession_uidx').on(
+      table.companyId,
+      table.concept,
+      table.unit,
+      table.periodStart,
+      table.periodEnd,
+      table.accession,
+    ),
+    index('company_facts_company_metric_period_end_idx').on(
+      table.companyId,
+      table.metric,
+      table.periodEnd,
+    ),
+  ],
+)
+
 export const ingestRun = sqliteTable('ingest_run', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   source: text('source').notNull(),
@@ -143,4 +190,6 @@ export type MovieExternalId = typeof movieExternalIds.$inferSelect
 export type BoxOfficeDaily = typeof boxOfficeDaily.$inferSelect
 export type MarketPeriod = typeof marketPeriod.$inferSelect
 export type UpcomingRelease = typeof upcomingReleases.$inferSelect
+export type Company = typeof companies.$inferSelect
+export type CompanyFact = typeof companyFacts.$inferSelect
 export type IngestRun = typeof ingestRun.$inferSelect
