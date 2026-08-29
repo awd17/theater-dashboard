@@ -128,6 +128,56 @@ function yoyRatio(
   return prior && prior.value !== 0 ? currentValue / prior.value - 1 : null
 }
 
+export interface OperatorQuarterEntry {
+  periodEnd: string
+  label: string
+  revenueCents: number
+  netIncomeCents: number | null
+  attendanceCount: number | null
+}
+
+export function calendarQuarterLabel(periodEnd: string): string {
+  const [year, month] = periodEnd.split('-')
+  return `Q${Math.ceil(Number(month) / 3)} ${year}`
+}
+
+export function buildOperatorQuarterlyHistory(
+  rows: OperatorFactRow[],
+  limit = 8,
+): OperatorQuarterEntry[] {
+  const revenueRows = rows.filter((row) => row.metric === 'revenue')
+  const quarterEnds = new Set(
+    revenueRows.filter(isQuarterlyFlow).map((row) => row.periodEnd),
+  )
+  for (const row of revenueRows) {
+    if (
+      !quarterEnds.has(row.periodEnd)
+      && quarterlyFlowOrYtdDifference(rows, 'revenue', row.periodEnd) !== null
+    ) {
+      quarterEnds.add(row.periodEnd)
+    }
+  }
+
+  return [...quarterEnds]
+    .sort((a, b) => b.localeCompare(a))
+    .slice(0, limit)
+    .map((periodEnd) => {
+      const revenueCents = quarterlyFlowOrYtdDifference(rows, 'revenue', periodEnd)
+      if (revenueCents === null) {
+        return null
+      }
+      return {
+        periodEnd,
+        label: calendarQuarterLabel(periodEnd),
+        revenueCents,
+        netIncomeCents: quarterlyFlowOrYtdDifference(rows, 'net_income', periodEnd),
+        attendanceCount: quarterlyFlowAt(rows, 'attendance', periodEnd)?.value ?? null,
+      }
+    })
+    .filter((entry) => entry !== null)
+    .reverse()
+}
+
 export function buildOperatorSnapshotEntry(
   company: { ticker: string, name: string },
   rows: OperatorFactRow[],

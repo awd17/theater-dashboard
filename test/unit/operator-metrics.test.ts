@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildOperatorQuarterlyHistory,
   buildOperatorSnapshotEntry,
   type OperatorFactRow,
 } from '../../server/ingest/operator-metrics'
@@ -188,5 +189,63 @@ describe('buildOperatorSnapshotEntry', () => {
       expect(partial.operatingCashFlowCents).toBeNull()
       expect(partial.freeCashFlowCents).toBeNull()
     })
+  })
+})
+
+describe('buildOperatorQuarterlyHistory', () => {
+  it('returns per-quarter revenue with companions, oldest first', () => {
+    const history = buildOperatorQuarterlyHistory([
+      flow('revenue', '2026-04-01', '2026-06-30', 150_000),
+      flow('revenue', '2026-01-01', '2026-03-31', 100_000, '2026-05-01'),
+      flow('revenue', '2026-01-01', '2026-06-30', 260_000),
+      flow('revenue', '2025-04-01', '2025-06-30', 120_000, '2025-07-23'),
+      flow('net_income', '2026-04-01', '2026-06-30', -1_000),
+      flow('attendance', '2026-04-01', '2026-06-30', 50_000),
+    ])
+
+    expect(history.map((entry) => entry.label)).toEqual(['Q2 2025', 'Q1 2026', 'Q2 2026'])
+    expect(history.at(-1)).toEqual({
+      periodEnd: '2026-06-30',
+      label: 'Q2 2026',
+      revenueCents: 150_000,
+      netIncomeCents: -1_000,
+      attendanceCount: 50_000,
+    })
+    expect(history[1]!.netIncomeCents).toBeNull()
+  })
+
+  it('caps the history at the requested number of quarters', () => {
+    const manyQuarters = Array.from({ length: 12 }, (_, index) => {
+      const year = 2020 + Math.floor(index / 4)
+      const quarter = (index % 4) + 1
+      const endMonth = String(quarter * 3).padStart(2, '0')
+      const startMonth = String(quarter * 3 - 2).padStart(2, '0')
+      return flow('revenue', `${year}-${startMonth}-01`, `${year}-${endMonth}-28`, 1_000 + index, `${year}-12-31`)
+    })
+
+    const history = buildOperatorQuarterlyHistory(manyQuarters, 8)
+    expect(history).toHaveLength(8)
+    expect(history[0]!.label).toBe('Q1 2021')
+    expect(history.at(-1)!.label).toBe('Q4 2022')
+  })
+
+  it('prefers the most recently filed value for a restated quarter', () => {
+    const history = buildOperatorQuarterlyHistory([
+      flow('revenue', '2026-01-01', '2026-03-31', 100_000, '2026-05-01'),
+      flow('revenue', '2026-01-01', '2026-03-31', 105_000, '2026-08-01'),
+    ])
+    expect(history).toHaveLength(1)
+    expect(history[0]!.revenueCents).toBe(105_000)
+  })
+
+  it('derives the fourth quarter from full-year and nine-month facts', () => {
+    const history = buildOperatorQuarterlyHistory([
+      flow('revenue', '2025-01-01', '2025-12-31', 400_000, '2026-02-25'),
+      flow('revenue', '2025-01-01', '2025-09-30', 290_000, '2025-11-05'),
+      flow('revenue', '2026-01-01', '2026-03-31', 95_000, '2026-05-01'),
+    ])
+
+    expect(history.map((entry) => entry.label)).toEqual(['Q4 2025', 'Q1 2026'])
+    expect(history[0]!.revenueCents).toBe(110_000)
   })
 })

@@ -14,6 +14,76 @@ export interface MarketPeriodRow {
   isPartial: boolean | null
 }
 
+export interface DistributorYearRow {
+  periodLabel: string
+  distributor: string
+  boxOfficeCents: number
+  titleCount: number
+  isPartial: boolean | null
+}
+
+export interface DistributorShareEntry {
+  distributor: string
+  boxOfficeCents: number
+  titleCount: number
+  share: number
+}
+
+export interface DistributorShareSummary {
+  periodLabel: string
+  isPartial: boolean
+  totalBoxOfficeCents: number
+  entries: DistributorShareEntry[]
+}
+
+export function buildDistributorShares(
+  rows: DistributorYearRow[],
+  topCount = 6,
+): DistributorShareSummary | null {
+  if (rows.length === 0) {
+    return null
+  }
+
+  const latestLabel = rows
+    .map((row) => row.periodLabel)
+    .reduce((a, b) => (a > b ? a : b))
+  const latestRows = rows
+    .filter((row) => row.periodLabel === latestLabel)
+    .sort((a, b) => b.boxOfficeCents - a.boxOfficeCents)
+
+  const totalBoxOfficeCents = latestRows.reduce((sum, row) => sum + row.boxOfficeCents, 0)
+  if (totalBoxOfficeCents === 0) {
+    return null
+  }
+
+  const top = latestRows.slice(0, topCount)
+  const rest = latestRows.slice(topCount)
+
+  const entries = top.map((row) => ({
+    distributor: row.distributor,
+    boxOfficeCents: row.boxOfficeCents,
+    titleCount: row.titleCount,
+    share: row.boxOfficeCents / totalBoxOfficeCents,
+  }))
+
+  if (rest.length > 0) {
+    const restBoxOffice = rest.reduce((sum, row) => sum + row.boxOfficeCents, 0)
+    entries.push({
+      distributor: `Others (${rest.length})`,
+      boxOfficeCents: restBoxOffice,
+      titleCount: rest.reduce((sum, row) => sum + row.titleCount, 0),
+      share: restBoxOffice / totalBoxOfficeCents,
+    })
+  }
+
+  return {
+    periodLabel: latestLabel,
+    isPartial: latestRows.some((row) => row.isPartial === true),
+    totalBoxOfficeCents,
+    entries,
+  }
+}
+
 export interface MarketYearEntry {
   periodLabel: string
   boxOfficeCents: number | null

@@ -2,8 +2,30 @@ import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { getDatabase } from '../../db/client'
 import { companies, companyFacts } from '../../db/schema'
-import { buildOperatorSnapshotEntry } from '../../ingest/operator-metrics'
+import {
+  buildOperatorQuarterlyHistory,
+  buildOperatorSnapshotEntry,
+  type OperatorFactRow,
+} from '../../ingest/operator-metrics'
 import { pub } from '../context'
+
+async function loadCompanyFactRows(
+  db: NonNullable<ReturnType<typeof getDatabase>>,
+  companyId: number,
+): Promise<OperatorFactRow[]> {
+  return await db
+    .select({
+      metric: companyFacts.metric,
+      periodStart: companyFacts.periodStart,
+      periodEnd: companyFacts.periodEnd,
+      value: companyFacts.value,
+      filedDate: companyFacts.filedDate,
+      fiscalYear: companyFacts.fiscalYear,
+      fiscalPeriod: companyFacts.fiscalPeriod,
+    })
+    .from(companyFacts)
+    .where(eq(companyFacts.companyId, companyId))
+}
 
 export const operatorSnapshotSchema = z.object({
   operators: z.array(
@@ -53,21 +75,56 @@ export const snapshot = pub
 
     const operators = []
     for (const company of companyRows) {
-      const factRows = await db
-        .select({
-          metric: companyFacts.metric,
-          periodStart: companyFacts.periodStart,
-          periodEnd: companyFacts.periodEnd,
-          value: companyFacts.value,
-          filedDate: companyFacts.filedDate,
-          fiscalYear: companyFacts.fiscalYear,
-          fiscalPeriod: companyFacts.fiscalPeriod,
-        })
-        .from(companyFacts)
-        .where(eq(companyFacts.companyId, company.id))
-
+      const factRows = await loadCompanyFactRows(db, company.id)
       operators.push(buildOperatorSnapshotEntry(company, factRows))
     }
 
     return operatorSnapshotSchema.parse({ operators })
+  })
+
+export const operatorHistorySchema = z.object({
+  operators: z.array(
+    z.object({
+      ticker: z.string(),
+      name: z.string(),
+      quarters: z.array(
+        z.object({
+          periodEnd: z.string(),
+          label: z.string(),
+          revenueCents: z.number().int(),
+          netIncomeCents: z.number().int().nullable(),
+          attendanceCount: z.number().int().nullable(),
+        }),
+      ),
+    }),
+  ),
+})
+
+export type OperatorHistoryResult = z.infer<typeof operatorHistorySchema>
+
+export const history = pub
+  .output(operatorHistorySchema)
+  .handler(async ({ context }) => {
+    const db = getDatabase(context.event)
+
+    if (!db) {
+      return { operators: [] }
+    }
+
+    const companyRows = await db
+      .select({ id: companies.id, ticker: companies.ticker, name: companies.name })
+      .from(companies)
+      .orderBy(companies.ticker)
+
+    const operators = []
+    for (const company of companyRows) {
+      const factRows = await loadCompanyFactRows(db, company.id)
+      operators.push({
+        ticker: company.ticker,
+        name: company.name,
+        quarters: buildOperatorQuarterlyHistory(factRows),
+      })
+    }
+
+    return operatorHistorySchema.parse({ operators })
   })

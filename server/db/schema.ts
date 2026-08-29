@@ -96,6 +96,33 @@ export const marketPeriod = sqliteTable(
   ],
 )
 
+export const marketDistributorYear = sqliteTable(
+  'market_distributor_year',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    source: text('source').notNull(),
+    periodLabel: text('period_label').notNull(),
+    geography: text('geography').notNull(),
+    distributor: text('distributor').notNull(),
+    boxOfficeCents: integer('box_office_cents').notNull(),
+    ticketsSold: integer('tickets_sold'),
+    titleCount: integer('title_count').notNull(),
+    isPartial: integer('is_partial', { mode: 'boolean' }),
+    sourceUrl: text('source_url').notNull(),
+    retrievedAt: text('retrieved_at').notNull(),
+    createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  },
+  (table) => [
+    uniqueIndex('market_distributor_year_source_label_geo_distributor_uidx').on(
+      table.source,
+      table.periodLabel,
+      table.geography,
+      table.distributor,
+    ),
+    index('market_distributor_year_period_label_idx').on(table.periodLabel),
+  ],
+)
+
 export const upcomingReleases = sqliteTable(
   'upcoming_releases',
   {
@@ -189,6 +216,7 @@ export type Movie = typeof movies.$inferSelect
 export type MovieExternalId = typeof movieExternalIds.$inferSelect
 export type BoxOfficeDaily = typeof boxOfficeDaily.$inferSelect
 export type MarketPeriod = typeof marketPeriod.$inferSelect
+export type MarketDistributorYear = typeof marketDistributorYear.$inferSelect
 export type UpcomingRelease = typeof upcomingReleases.$inferSelect
 export type Company = typeof companies.$inferSelect
 export type CompanyFact = typeof companyFacts.$inferSelect

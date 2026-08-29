@@ -1,8 +1,8 @@
 import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { getDatabase } from '../../db/client'
-import { boxOfficeDaily, marketPeriod } from '../../db/schema'
-import { buildIndustrySnapshot } from '../../ingest/metrics'
+import { boxOfficeDaily, marketDistributorYear, marketPeriod } from '../../db/schema'
+import { buildDistributorShares, buildIndustrySnapshot } from '../../ingest/metrics'
 import {
   DOMESTIC_TERRITORY,
   MARKET_PERIOD_KIND,
@@ -39,6 +39,21 @@ export const industrySnapshotSchema = z.object({
       yoyGrowthRatio: z.number().nullable(),
     }),
   ),
+  distributorShares: z
+    .object({
+      periodLabel: z.string(),
+      isPartial: z.boolean(),
+      totalBoxOfficeCents: z.number().int(),
+      entries: z.array(
+        z.object({
+          distributor: z.string(),
+          boxOfficeCents: z.number().int(),
+          titleCount: z.number().int(),
+          share: z.number(),
+        }),
+      ),
+    })
+    .nullable(),
 })
 
 export type IndustrySnapshotResult = z.infer<typeof industrySnapshotSchema>
@@ -55,6 +70,7 @@ const emptySnapshot: IndustrySnapshotResult = {
   recoveryBaselinePeriodLabel: '2019',
   latestMarketYear: null,
   marketYears: [],
+  distributorShares: null,
 }
 
 export const snapshot = pub
@@ -99,5 +115,24 @@ export const snapshot = pub
         ),
       )
 
-    return industrySnapshotSchema.parse(buildIndustrySnapshot(dailyRows, periods))
+    const distributorRows = await db
+      .select({
+        periodLabel: marketDistributorYear.periodLabel,
+        distributor: marketDistributorYear.distributor,
+        boxOfficeCents: marketDistributorYear.boxOfficeCents,
+        titleCount: marketDistributorYear.titleCount,
+        isPartial: marketDistributorYear.isPartial,
+      })
+      .from(marketDistributorYear)
+      .where(
+        and(
+          eq(marketDistributorYear.source, THE_NUMBERS_SOURCE),
+          eq(marketDistributorYear.geography, DOMESTIC_TERRITORY),
+        ),
+      )
+
+    return industrySnapshotSchema.parse({
+      ...buildIndustrySnapshot(dailyRows, periods),
+      distributorShares: buildDistributorShares(distributorRows),
+    })
   })

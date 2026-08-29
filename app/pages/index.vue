@@ -23,6 +23,11 @@ const { data: operators, error: operatorsError, status: operatorsStatus } = awai
   () => orpc.operators.snapshot(),
 )
 
+const { data: operatorHistory } = await useAsyncData(
+  'operators-history',
+  () => orpc.operators.history(),
+)
+
 function formatUsd(cents: number | null | undefined): string {
   if (cents === null || cents === undefined) {
     return '—'
@@ -80,6 +85,32 @@ function formatUsdExact(cents: number | null | undefined): string {
 const recentMarketYears = computed(() =>
   (industry.value?.marketYears ?? []).slice(-12).reverse(),
 )
+
+const revenueTrend = computed(() => {
+  const history = operatorHistory.value?.operators ?? []
+  if (history.length === 0) {
+    return null
+  }
+
+  const labels = [...new Set(
+    history.flatMap((operator) => operator.quarters.map((quarter) => quarter.label)),
+  )]
+  const labelOrder = new Map(
+    history.flatMap((operator) =>
+      operator.quarters.map((quarter) => [quarter.label, quarter.periodEnd] as const),
+    ),
+  )
+  labels.sort((a, b) => (labelOrder.get(b) ?? '').localeCompare(labelOrder.get(a) ?? ''))
+
+  const rows = labels.slice(0, 8).map((label) => ({
+    label,
+    cells: history.map((operator) =>
+      operator.quarters.find((quarter) => quarter.label === label)?.revenueCents ?? null,
+    ),
+  }))
+
+  return { tickers: history.map((operator) => operator.ticker), rows }
+})
 </script>
 
 <template>
@@ -284,6 +315,29 @@ const recentMarketYears = computed(() =>
                 </tbody>
               </table>
             </div>
+            <template v-if="revenueTrend && revenueTrend.rows.length > 0">
+              <p class="pt-2 font-medium">Quarterly revenue trend</p>
+              <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                  <thead>
+                    <tr class="border-b text-muted-foreground">
+                      <th class="py-1 pr-3 font-medium">Quarter</th>
+                      <th v-for="ticker in revenueTrend.tickers" :key="ticker" class="py-1 pr-3 font-medium">
+                        {{ ticker }}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in revenueTrend.rows" :key="row.label" class="border-b last:border-0">
+                      <td class="py-1.5 pr-3">{{ row.label }}</td>
+                      <td v-for="(cell, index) in row.cells" :key="revenueTrend.tickers[index]" class="py-1.5 pr-3">
+                        {{ formatUsdMillions(cell) }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </template>
             <p class="text-muted-foreground">
               Financials come from standardized XBRL company facts; attendance and the
               admissions/F&B revenue split are parsed from 10-Q tables. Per-patron
@@ -336,6 +390,36 @@ const recentMarketYears = computed(() =>
                 </tbody>
               </table>
             </div>
+            <template v-if="industry?.distributorShares">
+              <p class="pt-2 font-medium">
+                Distributor market share
+                ({{ industry.distributorShares.periodLabel }}<template v-if="industry.distributorShares.isPartial"> partial</template>)
+              </p>
+              <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                  <thead>
+                    <tr class="border-b text-muted-foreground">
+                      <th class="py-1 pr-3 font-medium">Distributor</th>
+                      <th class="py-1 pr-3 font-medium">Share</th>
+                      <th class="py-1 pr-3 font-medium">Box office</th>
+                      <th class="py-1 font-medium">Titles</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="entry in industry.distributorShares.entries"
+                      :key="entry.distributor"
+                      class="border-b last:border-0"
+                    >
+                      <td class="py-1.5 pr-3">{{ entry.distributor }}</td>
+                      <td class="py-1.5 pr-3">{{ formatRatio(entry.share) }}</td>
+                      <td class="py-1.5 pr-3">{{ formatUsdMillions(entry.boxOfficeCents) }}</td>
+                      <td class="py-1.5">{{ entry.titleCount }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </template>
             <p class="text-muted-foreground">
               Totals aggregate each year's top-grossing chart on The Numbers, so early
               years with fewer tracked titles understate the full market.

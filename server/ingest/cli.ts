@@ -8,6 +8,7 @@ import {
   startIngestRun,
   upsertDailyChart,
   upsertMarketYear,
+  upsertMarketYearDistributors,
 } from './upsert'
 
 interface CliArgs {
@@ -144,8 +145,9 @@ async function main(): Promise<void> {
         urlCount += 1
         const market = parseMarketYearHtml(page.html, year)
         rowCount += await upsertMarketYear(db, market, page.url, page.retrievedAt)
+        rowCount += await upsertMarketYearDistributors(db, market, page.url, page.retrievedAt)
         console.log(
-          `market ${year}: ${market.movieCount} titles`
+          `market ${year}: ${market.movieCount} titles, ${market.distributors.length} distributors`
           + (market.boxOfficeCents !== null
             ? `, $${(market.boxOfficeCents / 100).toLocaleString('en-US')}`
             : '')

@@ -28,7 +28,6 @@ The initial focus is:
 * Theater operating performance
 * Company financial health
 * Upcoming theatrical film supply
-* Select international comparisons
 
 The dashboard should combine industry-level data with company-level financial and operating data.
 
@@ -361,57 +360,6 @@ These are extensions rather than requirements for the first version.
 
 ---
 
-# International Comparison
-
-International analysis should provide context without turning the project into a complete global cinema database.
-
-Useful markets may include:
-
-* United States / Canada
-* United Kingdom
-* France
-* Japan
-* China
-* other major theatrical markets where reliable public data exists
-
-Important comparisons include:
-
-* Annual box office
-* Recovery versus 2019
-* Admissions where available
-* Box office per capita
-* Screen count
-* Screens per capita
-* Local versus imported film share where reliable
-* Domestic versus international contribution to worldwide movie grosses
-
-## International Comparison Principles
-
-Cross-country comparisons require caution.
-
-Nominal revenue converted directly into U.S. dollars can be heavily affected by exchange rates.
-
-Where possible, recovery should instead be measured using each country's own reported market value:
-
-```text
-Country Recovery Index =
-Current Local-Currency Box Office
-/
-2019 Local-Currency Box Office
-× 100
-```
-
-Population-normalized metrics can also provide more useful comparisons:
-
-```text
-Box Office per Capita =
-Annual Box Office / Population
-```
-
-Definitions used by national film organizations may differ and should not be treated as perfectly interchangeable.
-
----
-
 # Data Sources
 
 The project should rely on publicly accessible information.
@@ -480,16 +428,6 @@ TMDB can provide:
 * upcoming releases
 
 TMDB popularity or similar metadata should not automatically be interpreted as financial demand forecasts.
-
-## International Data
-
-Possible public sources include:
-
-* national film agencies
-* public government statistics
-* industry organizations
-* World Bank population data
-* public country-level box-office reporting
 
 ---
 
@@ -575,21 +513,6 @@ Metadata
 ```
 
 The dataset should support analysis of theatrical supply over future time windows.
-
-## International Markets
-
-International market observations may include:
-
-```text
-Country
-Period
-Box Office
-Admissions
-Screens
-Population
-Currency
-Source
-```
 
 ---
 
@@ -755,18 +678,6 @@ Historical Release Volume
 Release Volume vs Box Office
 ```
 
-## International
-
-```text
-Market Box Office
-Recovery vs 2019
-Box Office per Capita
-Admissions
-Screens
-Screens per Capita
-Domestic / International Movie Revenue Mix
-```
-
 ---
 
 # Questions the Finished Product Should Answer
@@ -799,9 +710,7 @@ The project should eventually make it easy to answer questions such as:
 
 13. How much exposure does each operator have outside North America?
 
-14. How has the U.S./North American theatrical recovery compared with other major film markets?
-
-15. Does historical release volume meaningfully relate to box-office performance?
+14. Does historical release volume meaningfully relate to box-office performance?
 
 ---
 
@@ -831,7 +740,7 @@ Upcoming film supply is useful because it is observable. Speculative forecasts s
 
 **Comparable without hiding differences.**
 
-Company and country comparisons should acknowledge differences in reporting definitions.
+Company comparisons should acknowledge differences in reporting definitions.
 
 **Public-data focused.**
 

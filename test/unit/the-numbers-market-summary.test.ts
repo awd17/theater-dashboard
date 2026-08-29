@@ -19,4 +19,21 @@ describe('parseMarketYearHtml', () => {
     expect(market.averageTicketPriceCents).toBe(916)
     expect(market.isPartial).toBe(false)
   })
+
+  it('aggregates box office by distributor, sorted by gross', () => {
+    const market = parseMarketYearHtml(fixture2019, 2019)
+
+    expect(market.distributors.length).toBeGreaterThan(10)
+    expect(market.distributors[0]!.distributor).toBe('Walt Disney')
+
+    const totalAcrossDistributors = market.distributors.reduce(
+      (sum, entry) => sum + entry.boxOfficeCents,
+      0,
+    )
+    expect(totalAcrossDistributors).toBeLessThanOrEqual(market.boxOfficeCents!)
+    expect(totalAcrossDistributors).toBeGreaterThan(market.boxOfficeCents! * 0.99)
+
+    const shares = market.distributors.map((entry) => entry.boxOfficeCents)
+    expect([...shares].sort((a, b) => b - a)).toEqual(shares)
+  })
 })

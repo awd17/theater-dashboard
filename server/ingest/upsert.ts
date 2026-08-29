@@ -4,6 +4,7 @@ import {
   companies,
   companyFacts,
   ingestRun,
+  marketDistributorYear,
   marketPeriod,
   movieExternalIds,
   movies,
@@ -167,6 +168,52 @@ export async function upsertMarketYear(
     })
 
   return 1
+}
+
+export async function upsertMarketYearDistributors(
+  db: LocalDatabase,
+  year: MarketYear,
+  sourceUrl: string,
+  retrievedAt: string,
+): Promise<number> {
+  let rowCount = 0
+
+  for (const entry of year.distributors) {
+    await db
+      .insert(marketDistributorYear)
+      .values({
+        source: THE_NUMBERS_SOURCE,
+        periodLabel: year.periodLabel,
+        geography: DOMESTIC_TERRITORY,
+        distributor: entry.distributor,
+        boxOfficeCents: entry.boxOfficeCents,
+        ticketsSold: entry.ticketsSold,
+        titleCount: entry.titleCount,
+        isPartial: year.isPartial,
+        sourceUrl,
+        retrievedAt,
+      })
+      .onConflictDoUpdate({
+        target: [
+          marketDistributorYear.source,
+          marketDistributorYear.periodLabel,
+          marketDistributorYear.geography,
+          marketDistributorYear.distributor,
+        ],
+        set: {
+          boxOfficeCents: entry.boxOfficeCents,
+          ticketsSold: entry.ticketsSold,
+          titleCount: entry.titleCount,
+          isPartial: year.isPartial,
+          sourceUrl,
+          retrievedAt,
+        },
+      })
+
+    rowCount += 1
+  }
+
+  return rowCount
 }
 
 export async function upsertUpcomingReleases(

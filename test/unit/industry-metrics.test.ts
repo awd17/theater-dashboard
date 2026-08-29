@@ -1,12 +1,50 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildDistributorShares,
   buildIndustrySnapshot,
   buildMarketYearHistory,
   computeRecoveryVs2019,
   computeTop10Concentration,
   type DailyGrossRow,
+  type DistributorYearRow,
   type MarketPeriodRow,
 } from '../../server/ingest/metrics'
+
+describe('buildDistributorShares', () => {
+  const row = (
+    periodLabel: string,
+    distributor: string,
+    boxOfficeCents: number,
+    isPartial = false,
+  ): DistributorYearRow => ({ periodLabel, distributor, boxOfficeCents, titleCount: 3, isPartial })
+
+  it('computes shares for the latest year and groups the tail into Others', () => {
+    const rows = [
+      row('2025', 'Old Studio', 999_999),
+      row('2026', 'Studio A', 500, true),
+      row('2026', 'Studio B', 300, true),
+      row('2026', 'Studio C', 150, true),
+      row('2026', 'Studio D', 50, true),
+    ]
+
+    const summary = buildDistributorShares(rows, 2)!
+
+    expect(summary.periodLabel).toBe('2026')
+    expect(summary.isPartial).toBe(true)
+    expect(summary.totalBoxOfficeCents).toBe(1_000)
+    expect(summary.entries.map((entry) => entry.distributor)).toEqual([
+      'Studio A',
+      'Studio B',
+      'Others (2)',
+    ])
+    expect(summary.entries[0]!.share).toBeCloseTo(0.5, 10)
+    expect(summary.entries[2]!.share).toBeCloseTo(0.2, 10)
+  })
+
+  it('returns null without distributor rows', () => {
+    expect(buildDistributorShares([])).toBeNull()
+  })
+})
 
 describe('buildMarketYearHistory', () => {
   const year = (
