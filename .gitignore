@@ -18,6 +18,9 @@ logs
 .fleet
 .idea
 
+# Ingest caches
+tmp/
+
 # Local env files
 .env
 .env.*

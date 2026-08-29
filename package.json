@@ -13,16 +13,19 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "wrangler d1 migrations apply theater-industry-dashboard --local"
+    "db:migrate": "wrangler d1 migrations apply theater-industry-dashboard --local",
+    "ingest:the-numbers": "bun run server/ingest/cli.ts"
   },
   "dependencies": {
     "@lucide/vue": "^1.35.0",
+    "@mendable/firecrawl-js": "^4.37.0",
     "@orpc/client": "^1.15.0",
     "@orpc/server": "^1.15.0",
     "@vueuse/core": "^14.4.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
+    "node-html-parser": "^9.0.2",
     "nuxt": "^4.5.2",
     "reka-ui": "^2.10.4",
     "shadcn-nuxt": "2.8.2",
@@ -39,6 +42,7 @@
     "@nuxt/test-utils": "^4.2.0",
     "@playwright/test": "^1.62.1",
     "@tailwindcss/vite": "^4.3.3",
+    "@types/bun": "^1.4.0",
     "@vue/test-utils": "^2.5.0",
     "drizzle-kit": "^0.31.10",
     "eslint": "^10.9.1",
