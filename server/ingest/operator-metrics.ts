@@ -10,7 +10,10 @@ export interface OperatorFactRow {
   filedDate: string
   fiscalYear: number | null
   fiscalPeriod: string | null
+  sourceUrl?: string
 }
+
+export type MetricQuality = 'reported' | 'derived' | 'estimated'
 
 export interface OperatorSnapshotEntry {
   ticker: string
@@ -40,6 +43,12 @@ export interface OperatorSnapshotEntry {
   freeCashFlowCents: number | null
   operatingLeaseCents: number | null
   revenuePerPatronYoyRatio: number | null
+  latestOperatingQuarterEnd: string | null
+  perPatronQuality: MetricQuality | null
+  attendanceYoyQuality: MetricQuality | null
+  revenuePerPatronYoyQuality: MetricQuality | null
+  revenueSourceUrl: string | null
+  operatingSourceUrl: string | null
 }
 
 function daysBetween(from: string, to: string): number {
@@ -111,7 +120,7 @@ function quarterLabel(row: OperatorFactRow): string {
   if (row.fiscalPeriod && row.fiscalYear) {
     return `${row.fiscalPeriod} ${row.fiscalYear}`
   }
-  return row.periodEnd
+  return calendarQuarterLabel(row.periodEnd)
 }
 
 function yoyRatio(
@@ -185,6 +194,63 @@ function perPatronAt(
     return null
   }
   return Math.round(revenueCents / attendance)
+}
+
+function ratioMicrosAt(
+  rows: OperatorFactRow[],
+  metric: string,
+  periodEnd: string,
+): number | null {
+  const row = latestFiled(
+    rows.filter((entry) => entry.metric === metric && entry.periodEnd === periodEnd),
+  )
+  return row ? row.value / 1_000_000 : null
+}
+
+function priorYearQuarterlyValue(
+  rows: OperatorFactRow[],
+  metric: string,
+  currentEnd: string,
+): number | null {
+  const row = latestFiled(
+    rows.filter((entry) => {
+      if (entry.metric !== metric || !isQuarterlyFlow(entry)) {
+        return false
+      }
+      const distance = daysBetween(entry.periodEnd, currentEnd)
+      return Math.abs(distance - 365) <= YOY_WINDOW_DAYS
+    }),
+  )
+  return row?.value ?? null
+}
+
+function estimatedCoreRevenuePerPatronGrowth(
+  rows: OperatorFactRow[],
+  periodEnd: string,
+): number | null {
+  const ticketGrowth = ratioMicrosAt(rows, 'average_ticket_price_yoy_ratio', periodEnd)
+  const foodBeverageGrowth = ratioMicrosAt(rows, 'food_beverage_per_patron_yoy_ratio', periodEnd)
+  const priorAdmissions = priorYearQuarterlyValue(rows, 'admissions_revenue', periodEnd)
+  const priorFoodBeverage = priorYearQuarterlyValue(rows, 'food_beverage_revenue', periodEnd)
+
+  if (
+    ticketGrowth === null
+    || foodBeverageGrowth === null
+    || priorAdmissions === null
+    || priorFoodBeverage === null
+  ) {
+    return null
+  }
+
+  const priorCoreRevenue = priorAdmissions + priorFoodBeverage
+  if (priorCoreRevenue === 0) {
+    return null
+  }
+
+  return (
+    priorAdmissions * ticketGrowth
+    + priorFoodBeverage * foodBeverageGrowth
+  ) / priorCoreRevenue
 }
 
 export function buildOperatorQuarterlyHistory(
@@ -312,6 +378,12 @@ export function buildOperatorSnapshotEntry(
     freeCashFlowCents: null,
     operatingLeaseCents: null,
     revenuePerPatronYoyRatio: null,
+    latestOperatingQuarterEnd: null,
+    perPatronQuality: null,
+    attendanceYoyQuality: null,
+    revenuePerPatronYoyQuality: null,
+    revenueSourceUrl: null,
+    operatingSourceUrl: null,
   }
 
   const quarterlyRevenues = rows.filter((row) => row.metric === 'revenue' && isQuarterlyFlow(row))
@@ -343,6 +415,10 @@ export function buildOperatorSnapshotEntry(
   }
 
   const latestAttendanceEnd = latestFilingMetricEnd('attendance')
+  const latestReportedAttendanceGrowthEnd = latestFilingMetricEnd('attendance_yoy_ratio')
+  const latestOperatingQuarterEnd = [latestAttendanceEnd, latestReportedAttendanceGrowthEnd]
+    .filter((periodEnd): periodEnd is string => periodEnd !== null)
+    .sort((a, b) => b.localeCompare(a))[0] ?? null
   const attendance = latestAttendanceEnd
     ? quarterlyFlowAt(rows, 'attendance', latestAttendanceEnd)
     : null
@@ -386,8 +462,25 @@ export function buildOperatorSnapshotEntry(
   const leaseCurrent = instantAt(rows, 'operating_lease_current', latestQuarterEnd)
 
   const history = buildOperatorQuarterlyHistory(rows, 12)
-  const revenuePerPatronYoyRatio = latestAttendanceEnd
+  const derivedRevenuePerPatronYoyRatio = latestAttendanceEnd
     ? priorYearComparable(history, latestAttendanceEnd, (entry) => entry.revenuePerPatronCents)
+    : null
+  const estimatedRevenuePerPatronYoyRatio = latestOperatingQuarterEnd
+    ? estimatedCoreRevenuePerPatronGrowth(rows, latestOperatingQuarterEnd)
+    : null
+  const revenuePerPatronYoyRatio = derivedRevenuePerPatronYoyRatio
+    ?? estimatedRevenuePerPatronYoyRatio
+  const reportedAttendanceYoyRatio = latestOperatingQuarterEnd
+    ? ratioMicrosAt(rows, 'attendance_yoy_ratio', latestOperatingQuarterEnd)
+    : null
+  const attendanceYoyRatio = attendance && latestAttendanceEnd
+    ? yoyRatio(rows, 'attendance', latestAttendanceEnd, attendance.value)
+    : reportedAttendanceYoyRatio
+  const operatingSource = latestOperatingQuarterEnd
+    ? latestFiled(rows.filter((row) =>
+        row.periodEnd === latestOperatingQuarterEnd
+        && (row.metric === 'attendance' || row.metric === 'attendance_yoy_ratio'),
+      ))
     : null
 
   return {
@@ -405,9 +498,7 @@ export function buildOperatorSnapshotEntry(
       : null,
     sharesOutstanding: shares?.value ?? null,
     attendanceCount: attendance?.value ?? null,
-    attendanceYoyRatio: attendance && latestAttendanceEnd
-      ? yoyRatio(rows, 'attendance', latestAttendanceEnd, attendance.value)
-      : null,
+    attendanceYoyRatio,
     admissionsRevenueCents: admissions?.value ?? null,
     foodBeverageRevenueCents: foodBeverage?.value ?? null,
     averageTicketPriceCents: perPatron(admissions),
@@ -426,5 +517,19 @@ export function buildOperatorSnapshotEntry(
       ? leaseNoncurrent.value + (leaseCurrent?.value ?? 0)
       : null,
     revenuePerPatronYoyRatio,
+    latestOperatingQuarterEnd,
+    perPatronQuality: attendance ? 'derived' : null,
+    attendanceYoyQuality: attendanceYoyRatio === null
+      ? null
+      : attendance
+        ? 'derived'
+        : 'reported',
+    revenuePerPatronYoyQuality: revenuePerPatronYoyRatio === null
+      ? null
+      : derivedRevenuePerPatronYoyRatio !== null
+        ? 'derived'
+        : 'estimated',
+    revenueSourceUrl: revenue.sourceUrl ?? null,
+    operatingSourceUrl: operatingSource?.sourceUrl ?? null,
   }
 }

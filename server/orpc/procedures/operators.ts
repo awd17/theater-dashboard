@@ -22,6 +22,7 @@ async function loadCompanyFactRows(
       filedDate: companyFacts.filedDate,
       fiscalYear: companyFacts.fiscalYear,
       fiscalPeriod: companyFacts.fiscalPeriod,
+      sourceUrl: companyFacts.sourceUrl,
     })
     .from(companyFacts)
     .where(eq(companyFacts.companyId, companyId))
@@ -81,6 +82,12 @@ export const operatorSnapshotSchema = z.object({
       freeCashFlowCents: z.number().int().nullable(),
       operatingLeaseCents: z.number().int().nullable(),
       revenuePerPatronYoyRatio: z.number().nullable(),
+      latestOperatingQuarterEnd: z.string().nullable(),
+      perPatronQuality: z.enum(['reported', 'derived', 'estimated']).nullable(),
+      attendanceYoyQuality: z.enum(['reported', 'derived', 'estimated']).nullable(),
+      revenuePerPatronYoyQuality: z.enum(['reported', 'derived', 'estimated']).nullable(),
+      revenueSourceUrl: z.string().url().nullable(),
+      operatingSourceUrl: z.string().url().nullable(),
     }),
   ),
 })

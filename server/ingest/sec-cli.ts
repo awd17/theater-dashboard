@@ -13,8 +13,9 @@ import {
   filingMetricsConfigured,
   parseFilingOperatingMetrics,
 } from './sources/sec/filing-operating-metrics'
-import { findLatestFiling } from './sources/sec/submissions'
+import { findRecentFilings } from './sources/sec/submissions'
 import {
+  deleteFilingTextFacts,
   finishIngestRun,
   resolveCompanyId,
   startIngestRun,
@@ -22,6 +23,7 @@ import {
 } from './upsert'
 
 const REQUEST_INTERVAL_MS = 500
+const OPERATING_FILING_HISTORY_LIMIT = 8
 
 async function fetchSec(url: string, accept: string): Promise<Response> {
   const response = await fetch(url, {
@@ -44,53 +46,55 @@ async function ingestFilingMetrics(
   }
 
   const submissions = await (await fetchSec(submissionsUrl(company.cik), 'application/json')).json()
-  const filing = findLatestFiling(submissions, ['10-Q'])
-  if (!filing) {
+  const filings = findRecentFilings(submissions, ['10-Q'], OPERATING_FILING_HISTORY_LIMIT)
+  if (filings.length === 0) {
     console.log(`${company.ticker}: no recent 10-Q found`)
     return { urls: 1, rows: 0 }
   }
 
-  await new Promise((resolve) => setTimeout(resolve, REQUEST_INTERVAL_MS))
-  const documentUrl = filingDocumentUrl(company.cik, filing.accession, filing.primaryDocument)
-  const html = await (await fetchSec(documentUrl, 'text/html')).text()
-  const retrievedAt = new Date().toISOString()
+  let urlCount = 1
+  let rowCount = 0
 
-  const metrics = parseFilingOperatingMetrics(html, company.ticker, filing.reportDate)
-  if (metrics.length === 0) {
-    console.log(`${company.ticker}: no operating rows found in ${filing.form} ${filing.accession}`)
-    return { urls: 2, rows: 0 }
+  for (const filing of filings) {
+    await new Promise((resolve) => setTimeout(resolve, REQUEST_INTERVAL_MS))
+    const documentUrl = filingDocumentUrl(company.cik, filing.accession, filing.primaryDocument)
+    const html = await (await fetchSec(documentUrl, 'text/html')).text()
+    const retrievedAt = new Date().toISOString()
+    urlCount += 1
+
+    const metrics = parseFilingOperatingMetrics(html, company.ticker, filing.reportDate)
+    if (metrics.length === 0) {
+      console.log(`${company.ticker}: no operating rows found in ${filing.form} ${filing.accession}`)
+      continue
+    }
+
+    const facts = metrics.flatMap((metric) => {
+      const observations = metric.priorYearQuarter
+        ? [metric.currentQuarter, metric.priorYearQuarter]
+        : [metric.currentQuarter]
+      return observations.map((quarter) => ({
+        metric: metric.metric,
+        concept: metric.concept,
+        unit: metric.unit,
+        periodStart: quarter.periodStart,
+        periodEnd: quarter.periodEnd,
+        value: quarter.value,
+        fiscalYear: null,
+        fiscalPeriod: null,
+        form: filing.form,
+        filedDate: filing.filingDate,
+        accession: filing.accession,
+      }))
+    })
+
+    await deleteFilingTextFacts(db, companyId, filing.accession)
+    rowCount += await upsertCompanyFacts(db, companyId, facts, documentUrl, retrievedAt)
+    console.log(
+      `${company.ticker}: ${filing.reportDate} filing metrics ${metrics.map((metric) => metric.metric).join(', ')}`,
+    )
   }
 
-  const facts = metrics.flatMap((metric) =>
-    [metric.currentQuarter, metric.priorYearQuarter].map((quarter) => ({
-      metric: metric.metric,
-      concept: metric.concept,
-      unit: metric.unit,
-      periodStart: quarter.periodStart,
-      periodEnd: quarter.periodEnd,
-      value: quarter.value,
-      fiscalYear: null,
-      fiscalPeriod: null,
-      form: filing.form,
-      filedDate: filing.filingDate,
-      accession: filing.accession,
-    })),
-  )
-
-  const rows = await upsertCompanyFacts(db, companyId, facts, documentUrl, retrievedAt)
-  const summary = metrics
-    .map((metric) => {
-      const value = metric.currentQuarter.value
-      if (metric.unit !== 'count') {
-        return `${metric.metric}=$${(value / 1e8).toFixed(1)}M`
-      }
-      return value >= 1e6
-        ? `${metric.metric}=${(value / 1e6).toFixed(1)}M`
-        : `${metric.metric}=${value.toLocaleString('en-US')}`
-    })
-    .join(' ')
-  console.log(`${company.ticker}: filing metrics ${summary}`)
-  return { urls: 2, rows }
+  return { urls: urlCount, rows: rowCount }
 }
 
 async function main(): Promise<void> {

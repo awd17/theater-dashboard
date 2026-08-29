@@ -111,6 +111,33 @@ describe('buildOperatorSnapshotEntry', () => {
       expect(entry.attendanceYoyRatio).toBeNull()
       expect(entry.revenuePerPatronCents).toBeNull()
     })
+
+    it('uses reported attendance growth and an estimated core-spend proxy when counts are undisclosed', () => {
+      const marcus = buildOperatorSnapshotEntry(
+        { ticker: 'MCS', name: 'Marcus' },
+        [
+          flow('revenue', '2026-04-01', '2026-06-30', 231_744),
+          flow('admissions_revenue', '2026-04-01', '2026-06-30', 72_557),
+          flow('admissions_revenue', '2025-04-01', '2025-06-30', 62_348),
+          flow('food_beverage_revenue', '2026-04-01', '2026-06-30', 65_264),
+          flow('food_beverage_revenue', '2025-04-01', '2025-06-30', 57_611),
+          flow('attendance_yoy_ratio', '2026-04-01', '2026-06-30', 109_000),
+          flow('average_ticket_price_yoy_ratio', '2026-04-01', '2026-06-30', 52_000),
+          flow('food_beverage_per_patron_yoy_ratio', '2026-04-01', '2026-06-30', 24_000),
+        ],
+      )
+
+      const expectedCoreSpendGrowth = (
+        62_348 * 0.052
+        + 57_611 * 0.024
+      ) / (62_348 + 57_611)
+
+      expect(marcus.attendanceCount).toBeNull()
+      expect(marcus.attendanceYoyRatio).toBeCloseTo(0.109, 10)
+      expect(marcus.attendanceYoyQuality).toBe('reported')
+      expect(marcus.revenuePerPatronYoyRatio).toBeCloseTo(expectedCoreSpendGrowth, 10)
+      expect(marcus.revenuePerPatronYoyQuality).toBe('estimated')
+    })
   })
 
   describe('revenue split and per-patron metrics', () => {

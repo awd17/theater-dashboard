@@ -30,39 +30,96 @@ const perPatronBars = computed(() =>
   rows.value.map((operator) => ({
     label: operator.ticker,
     values: [
-      {
+      operator.averageTicketPriceCents === null ? null : {
         key: 'avgTicket',
         label: 'Avg ticket',
-        value: (operator.averageTicketPriceCents ?? 0) / 100,
+        value: operator.averageTicketPriceCents / 100,
         color: 'var(--chart-2)',
       },
-      {
+      operator.foodBeveragePerPatronCents === null ? null : {
         key: 'fb',
         label: 'F&B / patron',
-        value: (operator.foodBeveragePerPatronCents ?? 0) / 100,
+        value: operator.foodBeveragePerPatronCents / 100,
         color: 'var(--chart-4)',
       },
-      {
+      operator.revenuePerPatronCents === null ? null : {
         key: 'rev',
         label: 'Revenue / patron',
-        value: (operator.revenuePerPatronCents ?? 0) / 100,
+        value: operator.revenuePerPatronCents / 100,
         color: 'var(--chart-3)',
       },
-    ],
+    ].filter((value) => value !== null),
   })),
 )
 
-const quadrantPoints = computed(() =>
+const missingPerPatronOperators = computed(() =>
   rows.value
-    .filter((operator) =>
-      operator.attendanceYoyRatio !== null && operator.revenuePerPatronYoyRatio !== null,
-    )
-    .map((operator) => ({
-      ticker: operator.ticker,
-      x: (operator.revenuePerPatronYoyRatio ?? 0) * 100,
-      y: (operator.attendanceYoyRatio ?? 0) * 100,
-    })),
+    .filter((operator) => operator.revenuePerPatronCents === null)
+    .map((operator) => operator.ticker),
 )
+
+const operatorColors: Record<string, string> = {
+  AMC: '#0f172a',
+  CNK: '#1d4ed8',
+  MCS: '#93c5fd',
+}
+
+const quadrantPoints = computed(() =>
+  rows.value.flatMap((operator) => {
+    if (
+      operator.attendanceYoyRatio === null
+      || operator.revenuePerPatronYoyRatio === null
+      || operator.attendanceYoyQuality === null
+      || operator.revenuePerPatronYoyQuality === null
+    ) {
+      return []
+    }
+    return [{
+      ticker: operator.ticker,
+      x: operator.revenuePerPatronYoyRatio * 100,
+      y: operator.attendanceYoyRatio * 100,
+      attendanceQuality: operator.attendanceYoyQuality,
+      monetizationQuality: operator.revenuePerPatronYoyQuality,
+      color: operatorColors[operator.ticker] ?? 'var(--foreground)',
+    }]
+  }),
+)
+
+const qualityLabels = {
+  reported: 'reported',
+  derived: 'derived',
+  estimated: 'estimated',
+} as const
+
+const quadrantPlot = ref<HTMLElement | null>(null)
+const quadrantTooltip = ref<{
+  point: (typeof quadrantPoints.value)[number]
+  left: number
+  top: number
+} | null>(null)
+
+function showQuadrantTooltip(
+  event: MouseEvent | FocusEvent,
+  point: (typeof quadrantPoints.value)[number],
+): void {
+  const target = event.currentTarget
+  const plot = quadrantPlot.value
+  if (!(target instanceof SVGCircleElement) || !plot) {
+    return
+  }
+
+  const targetBounds = target.getBoundingClientRect()
+  const plotBounds = plot.getBoundingClientRect()
+  quadrantTooltip.value = {
+    point,
+    left: targetBounds.left - plotBounds.left + targetBounds.width / 2,
+    top: targetBounds.top - plotBounds.top - 8,
+  }
+}
+
+function hideQuadrantTooltip(): void {
+  quadrantTooltip.value = null
+}
 
 const revenueTrend = computed(() => {
   const historyRows = history.value?.operators ?? []
@@ -183,12 +240,18 @@ const quadrantExtent = 20
           description="Average ticket price, food and beverage per patron, and total revenue per patron."
         >
           <DashboardGroupedBars
-            v-if="perPatronBars.some((row) => row.values.some((value) => value.value > 0))"
+            v-if="perPatronBars.some((row) => row.values.length > 0)"
             :items="perPatronBars"
             :format-value="(value: number) => `$${value.toFixed(2)}`"
           />
           <p v-else class="text-sm text-muted-foreground">
             Per-patron metrics require matched attendance and revenue periods.
+          </p>
+          <p class="mt-3 text-xs text-muted-foreground">
+            Derived from reported revenue and attendance.
+            <template v-if="missingPerPatronOperators.length > 0">
+              {{ missingPerPatronOperators.join(', ') }} omitted because absolute attendance is not reported.
+            </template>
           </p>
         </DashboardSectionCard>
 
@@ -197,44 +260,87 @@ const quadrantExtent = 20
           description="Attendance growth versus revenue-per-patron growth. Upper-right is strong on both."
         >
           <div v-if="quadrantPoints.length > 0" class="space-y-3">
-            <svg viewBox="0 0 320 240" class="h-[240px] w-full">
-              <line x1="40" y1="120" x2="300" y2="120" class="stroke-border" />
-              <line x1="170" y1="20" x2="170" y2="220" class="stroke-border" />
-              <text x="170" y="236" text-anchor="middle" class="fill-muted-foreground text-[10px]">
-                Revenue / patron growth %
-              </text>
-              <text
-                x="14"
-                y="120"
-                text-anchor="middle"
-                transform="rotate(-90 14 120)"
-                class="fill-muted-foreground text-[10px]"
+            <div ref="quadrantPlot" class="relative">
+              <svg viewBox="0 0 320 240" class="h-[240px] w-full">
+                <line x1="40" y1="120" x2="300" y2="120" class="stroke-border" />
+                <line x1="170" y1="20" x2="170" y2="220" class="stroke-border" />
+                <text x="170" y="236" text-anchor="middle" class="fill-muted-foreground text-[10px]">
+                  Monetization growth %
+                </text>
+                <text
+                  x="14"
+                  y="120"
+                  text-anchor="middle"
+                  transform="rotate(-90 14 120)"
+                  class="fill-muted-foreground text-[10px]"
+                >
+                  Attendance growth %
+                </text>
+                <circle
+                  v-for="point in quadrantPoints"
+                  :key="point.ticker"
+                  :cx="170 + (point.x / quadrantExtent) * 130"
+                  :cy="120 - (point.y / quadrantExtent) * 100"
+                  r="7"
+                  tabindex="0"
+                  role="img"
+                  class="outline-none"
+                  :aria-label="`${point.ticker}: attendance ${point.y.toFixed(1)} percent, monetization ${point.x.toFixed(1)} percent`"
+                  :style="{ fill: point.color }"
+                  @mouseenter="showQuadrantTooltip($event, point)"
+                  @mouseleave="hideQuadrantTooltip"
+                  @focus="showQuadrantTooltip($event, point)"
+                  @blur="hideQuadrantTooltip"
+                />
+                <text
+                  v-for="(point, index) in quadrantPoints"
+                  :key="`${point.ticker}-label`"
+                  :x="170 + (point.x / quadrantExtent) * 130 + 10"
+                  :y="120 - (point.y / quadrantExtent) * 100 + (index % 2 === 0 ? -8 : 14)"
+                  class="pointer-events-none text-[10px] font-medium"
+                  :style="{ fill: point.color }"
+                >
+                  {{ point.ticker }}
+                </text>
+              </svg>
+              <div
+                v-if="quadrantTooltip"
+                class="pointer-events-none absolute z-10 grid min-w-52 -translate-x-1/2 -translate-y-full gap-1.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl"
+                :style="{ left: `${quadrantTooltip.left}px`, top: `${quadrantTooltip.top}px` }"
+                aria-hidden="true"
               >
-                Attendance growth %
-              </text>
-              <circle
-                v-for="point in quadrantPoints"
-                :key="point.ticker"
-                :cx="170 + (point.x / quadrantExtent) * 130"
-                :cy="120 - (point.y / quadrantExtent) * 100"
-                r="7"
-                class="fill-foreground"
-              />
-              <text
-                v-for="point in quadrantPoints"
-                :key="`${point.ticker}-label`"
-                :x="170 + (point.x / quadrantExtent) * 130 + 10"
-                :y="120 - (point.y / quadrantExtent) * 100 + 3"
-                class="fill-foreground text-[10px] font-medium"
-              >
-                {{ point.ticker }}
-              </text>
-            </svg>
-            <div class="flex flex-wrap gap-3 text-xs text-muted-foreground">
-              <span v-for="point in quadrantPoints" :key="point.ticker">
-                {{ point.ticker }}: attendance {{ point.y.toFixed(1) }}%, rev/patron {{ point.x.toFixed(1) }}%
-              </span>
+                <div class="flex items-center gap-1.5 font-medium">
+                  <span
+                    class="size-2 rounded-full"
+                    :style="{ backgroundColor: quadrantTooltip.point.color }"
+                  />
+                  {{ quadrantTooltip.point.ticker }}
+                </div>
+                <div class="flex items-center justify-between gap-4">
+                  <span class="text-muted-foreground">Attendance growth</span>
+                  <span class="font-mono font-medium tabular-nums">
+                    {{ quadrantTooltip.point.y.toFixed(1) }}%
+                  </span>
+                </div>
+                <div class="flex items-center justify-between gap-4">
+                  <span class="text-muted-foreground">Monetization growth</span>
+                  <span class="font-mono font-medium tabular-nums">
+                    {{ quadrantTooltip.point.x.toFixed(1) }}%
+                  </span>
+                </div>
+                <div class="text-muted-foreground">
+                  Attendance {{ qualityLabels[quadrantTooltip.point.attendanceQuality] }}
+                  · monetization {{ qualityLabels[quadrantTooltip.point.monetizationQuality] }}
+                </div>
+              </div>
             </div>
+            <p
+              v-if="quadrantPoints.some((point) => point.monetizationQuality === 'estimated')"
+              class="text-xs text-muted-foreground"
+            >
+              Estimated monetization uses reported ticket-price and concession-per-person growth,
+              weighted by the prior-year revenue mix. It excludes other theatre revenue.
+            </p>
           </div>
           <p v-else class="text-sm text-muted-foreground">
             Need year-over-year attendance and revenue-per-patron for the quadrant.
@@ -364,8 +470,9 @@ const quadrantExtent = 20
         </div>
         <p class="mt-4 text-xs text-muted-foreground">
           Financials come from standardized XBRL company facts. Attendance, admissions/F&B split, and
-          theatre/screen counts are parsed from 10-Q tables. AMC screens are period-end counts while
-          Cinemark reports a quarterly average. Missing cells mean the company did not report the value.
+          theatre/screen counts are supplemented from 10-Q tables when the SEC Company Facts feed lags.
+          AMC and Marcus screens are period-end counts while Cinemark reports a quarterly average.
+          Missing cells mean no comparable current-period public value was available.
         </p>
       </DashboardSectionCard>
 

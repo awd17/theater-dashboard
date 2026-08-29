@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, like } from 'drizzle-orm'
 import {
   boxOfficeDaily,
   companies,
@@ -341,6 +341,22 @@ export async function upsertCompanyFacts(
   }
 
   return rowCount
+}
+
+export async function deleteFilingTextFacts(
+  db: LocalDatabase,
+  companyId: number,
+  accession: string,
+): Promise<void> {
+  await db
+    .delete(companyFacts)
+    .where(
+      and(
+        eq(companyFacts.companyId, companyId),
+        eq(companyFacts.accession, accession),
+        like(companyFacts.concept, 'filing_text:%'),
+      ),
+    )
 }
 
 export async function startIngestRun(

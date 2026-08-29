@@ -23,20 +23,32 @@ export interface LatestFiling {
 }
 
 export function findLatestFiling(json: unknown, forms: string[]): LatestFiling | null {
+  return findRecentFilings(json, forms, 1)[0] ?? null
+}
+
+export function findRecentFilings(
+  json: unknown,
+  forms: string[],
+  limit: number,
+): LatestFiling[] {
   const response = submissionsResponseSchema.parse(json)
   const recent = response.filings.recent
+  const filings: LatestFiling[] = []
 
   for (let i = 0; i < recent.form.length; i += 1) {
     if (forms.includes(recent.form[i]!) && recent.reportDate[i]) {
-      return {
+      filings.push({
         accession: recent.accessionNumber[i]!,
         form: recent.form[i]!,
         primaryDocument: recent.primaryDocument[i]!,
         reportDate: recent.reportDate[i]!,
         filingDate: recent.filingDate[i]!,
+      })
+      if (filings.length >= limit) {
+        break
       }
     }
   }
 
-  return null
+  return filings
 }
