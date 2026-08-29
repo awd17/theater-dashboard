@@ -1,0 +1,157 @@
+name: Ingest
+
+on:
+  schedule:
+    - cron: '15 12 * * *'
+    - cron: '30 13 * * 1'
+    - cron: '0 14 * * 1-5'
+    - cron: '0 15 2 1 *'
+  workflow_dispatch:
+    inputs:
+      job:
+        description: Which ingest job to run
+        required: true
+        type: choice
+        options:
+          - daily-box-office
+          - weekly-market-tmdb
+          - weekday-sec
+          - yearly-market
+          - all
+        default: daily-box-office
+      daily_from:
+        description: Optional daily-from override (YYYY-MM-DD)
+        required: false
+        type: string
+      daily_to:
+        description: Optional daily-to override (YYYY-MM-DD)
+        required: false
+        type: string
+      market_years:
+        description: Optional market years override (YYYY or YYYY-YYYY)
+        required: false
+        type: string
+
+concurrency:
+  group: ingest-production
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Resolve schedule targets
+        id: targets
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CRON: ${{ github.event.schedule }}
+          JOB_INPUT: ${{ inputs.job }}
+          DAILY_FROM_INPUT: ${{ inputs.daily_from }}
+          DAILY_TO_INPUT: ${{ inputs.daily_to }}
+          MARKET_YEARS_INPUT: ${{ inputs.market_years }}
+        run: |
+          python3 <<'PY'
+          import os
+          from datetime import date, timedelta
+          from pathlib import Path
+
+          today = date.today()
+          event_name = os.environ["EVENT_NAME"]
+          cron = os.environ.get("CRON", "")
+          job_input = os.environ.get("JOB_INPUT") or ""
+          daily_from = os.environ.get("DAILY_FROM_INPUT") or ""
+          daily_to = os.environ.get("DAILY_TO_INPUT") or ""
+          market_years = os.environ.get("MARKET_YEARS_INPUT") or ""
+
+          jobs = set()
+          if event_name == "workflow_dispatch":
+              if job_input == "all":
+                  jobs = {"daily-box-office", "weekly-market-tmdb", "weekday-sec", "yearly-market"}
+              else:
+                  jobs = {job_input}
+          elif cron == "15 12 * * *":
+              jobs = {"daily-box-office"}
+          elif cron == "30 13 * * 1":
+              jobs = {"weekly-market-tmdb"}
+          elif cron == "0 14 * * 1-5":
+              jobs = {"weekday-sec"}
+          elif cron == "0 15 2 1 *":
+              jobs = {"yearly-market"}
+          else:
+              raise SystemExit(f"Unhandled schedule: {cron!r}")
+
+          if not daily_from or not daily_to:
+              daily_to = (today - timedelta(days=1)).isoformat()
+              daily_from = (today - timedelta(days=7)).isoformat()
+
+          if not market_years:
+              if "yearly-market" in jobs and "weekly-market-tmdb" not in jobs:
+                  market_years = str(today.year - 1)
+              else:
+                  market_years = f"{today.year - 1}-{today.year}"
+
+          out = Path(os.environ["GITHUB_OUTPUT"])
+          with out.open("a", encoding="utf-8") as handle:
+              handle.write(f"run_daily={'true' if 'daily-box-office' in jobs else 'false'}\n")
+              handle.write(f"run_weekly={'true' if 'weekly-market-tmdb' in jobs else 'false'}\n")
+              handle.write(f"run_sec={'true' if 'weekday-sec' in jobs else 'false'}\n")
+              handle.write(f"run_yearly={'true' if 'yearly-market' in jobs else 'false'}\n")
+              handle.write(f"daily_from={daily_from}\n")
+              handle.write(f"daily_to={daily_to}\n")
+              handle.write(f"market_years={market_years}\n")
+              handle.write(f"yearly_market_year={today.year - 1}\n")
+          PY
+      - name: Daily box office
+        if: steps.targets.outputs.run_daily == 'true'
+        env:
+          INGEST_REMOTE_URL: ${{ secrets.INGEST_REMOTE_URL }}
+          INGEST_TOKEN: ${{ secrets.INGEST_TOKEN }}
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          FIRECRAWL_MAX_PER_RUN: '20'
+        run: >
+          bun run ingest:the-numbers
+          --daily-from ${{ steps.targets.outputs.daily_from }}
+          --daily-to ${{ steps.targets.outputs.daily_to }}
+          --force-refresh
+      - name: Weekly market summary
+        if: steps.targets.outputs.run_weekly == 'true'
+        env:
+          INGEST_REMOTE_URL: ${{ secrets.INGEST_REMOTE_URL }}
+          INGEST_TOKEN: ${{ secrets.INGEST_TOKEN }}
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          FIRECRAWL_MAX_PER_RUN: '10'
+        run: >
+          bun run ingest:the-numbers
+          --market-years ${{ steps.targets.outputs.market_years }}
+          --force-refresh
+      - name: Weekly TMDB outlook
+        if: steps.targets.outputs.run_weekly == 'true'
+        env:
+          INGEST_REMOTE_URL: ${{ secrets.INGEST_REMOTE_URL }}
+          INGEST_TOKEN: ${{ secrets.INGEST_TOKEN }}
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+        run: bun run ingest:tmdb --days 180 --region US
+      - name: Weekday SEC poll
+        if: steps.targets.outputs.run_sec == 'true'
+        env:
+          INGEST_REMOTE_URL: ${{ secrets.INGEST_REMOTE_URL }}
+          INGEST_TOKEN: ${{ secrets.INGEST_TOKEN }}
+          SEC_EDGAR_CONTACT: ${{ secrets.SEC_EDGAR_CONTACT }}
+        run: bun run ingest:sec
+      - name: Yearly completed market year
+        if: steps.targets.outputs.run_yearly == 'true'
+        env:
+          INGEST_REMOTE_URL: ${{ secrets.INGEST_REMOTE_URL }}
+          INGEST_TOKEN: ${{ secrets.INGEST_TOKEN }}
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          FIRECRAWL_MAX_PER_RUN: '5'
+        run: >
+          bun run ingest:the-numbers
+          --market-years ${{ steps.targets.outputs.yearly_market_year }}
+          --force-refresh

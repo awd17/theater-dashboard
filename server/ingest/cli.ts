@@ -1,15 +1,9 @@
+import { fetchHtml, getFetchStats, PageNotFoundError, resetFetchStats } from './http'
+import { openLocalDatabase } from './local-db'
 import { dailyChartUrl, marketYearUrl, THE_NUMBERS_SOURCE } from './sources/the-numbers/constants'
 import { parseDailyChartHtml } from './sources/the-numbers/daily-chart'
 import { parseMarketYearHtml } from './sources/the-numbers/market-summary'
-import { fetchHtml, PageNotFoundError } from './http'
-import { openLocalDatabase } from './local-db'
-import {
-  finishIngestRun,
-  startIngestRun,
-  upsertDailyChart,
-  upsertMarketYear,
-  upsertMarketYearDistributors,
-} from './upsert'
+import { createIngestWriterFromEnv } from './writer'
 
 interface CliArgs {
   dailyFrom: string | null
@@ -84,6 +78,10 @@ function printHelp(): void {
 
 Options:
   --force-refresh   Bypass local HTML cache
+
+Remote mode:
+  INGEST_REMOTE_URL=https://your-worker.workers.dev
+  INGEST_TOKEN=...
 `)
 }
 
@@ -104,8 +102,10 @@ function eachDateInclusive(from: string, to: string): string[] {
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2))
-  const db = openLocalDatabase()
-  const runId = await startIngestRun(db, THE_NUMBERS_SOURCE, { ...args })
+  resetFetchStats()
+  const localDb = process.env.INGEST_REMOTE_URL ? undefined : openLocalDatabase()
+  const writer = createIngestWriterFromEnv(localDb)
+  const runId = await writer.startRun(THE_NUMBERS_SOURCE, { ...args })
 
   let urlCount = 0
   let rowCount = 0
@@ -128,7 +128,7 @@ async function main(): Promise<void> {
         }
         urlCount += 1
         const chart = parseDailyChartHtml(page.html, date)
-        rowCount += await upsertDailyChart(db, chart, page.url, page.retrievedAt)
+        rowCount += await writer.upsertDailyChart(chart, page.url, page.retrievedAt)
         console.log(
           `daily ${date}: ${chart.rows.length} rows via ${page.via}`
           + (chart.reportedTotalGrossCents !== null
@@ -144,8 +144,7 @@ async function main(): Promise<void> {
         const page = await fetchHtml(url, { forceRefresh: args.forceRefresh })
         urlCount += 1
         const market = parseMarketYearHtml(page.html, year)
-        rowCount += await upsertMarketYear(db, market, page.url, page.retrievedAt)
-        rowCount += await upsertMarketYearDistributors(db, market, page.url, page.retrievedAt)
+        rowCount += await writer.upsertMarketYear(market, page.url, page.retrievedAt)
         console.log(
           `market ${year}: ${market.movieCount} titles, ${market.distributors.length} distributors`
           + (market.boxOfficeCents !== null
@@ -156,12 +155,15 @@ async function main(): Promise<void> {
       }
     }
 
-    await finishIngestRun(db, runId, 'completed', urlCount, rowCount)
-    console.log(`Done. urls=${urlCount} rows=${rowCount}`)
+    await writer.finishRun(runId, 'completed', urlCount, rowCount)
+    const stats = getFetchStats()
+    console.log(
+      `Done. urls=${urlCount} rows=${rowCount} fetch={native:${stats.native},cache:${stats.cache},firecrawl:${stats.firecrawl}}`,
+    )
   }
   catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    await finishIngestRun(db, runId, 'failed', urlCount, rowCount, message)
+    await writer.finishRun(runId, 'failed', urlCount, rowCount, message)
     console.error(message)
     process.exitCode = 1
   }

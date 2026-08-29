@@ -14,16 +14,11 @@ import {
   parseFilingOperatingMetrics,
 } from './sources/sec/filing-operating-metrics'
 import { findRecentFilings } from './sources/sec/submissions'
-import {
-  deleteFilingTextFacts,
-  finishIngestRun,
-  resolveCompanyId,
-  startIngestRun,
-  upsertCompanyFacts,
-} from './upsert'
+import { createIngestWriterFromEnv, type IngestWriter } from './writer'
 
 const REQUEST_INTERVAL_MS = 500
 const OPERATING_FILING_HISTORY_LIMIT = 8
+const OPERATING_FILING_FORMS = ['10-Q', '10-K'] as const
 
 async function fetchSec(url: string, accept: string): Promise<Response> {
   const response = await fetch(url, {
@@ -36,9 +31,8 @@ async function fetchSec(url: string, accept: string): Promise<Response> {
 }
 
 async function ingestFilingMetrics(
-  db: Awaited<ReturnType<typeof openLocalDatabase>>,
+  writer: IngestWriter,
   company: SecCompany,
-  companyId: number,
 ): Promise<{ urls: number, rows: number }> {
   if (!filingMetricsConfigured(company.ticker)) {
     console.log(`${company.ticker}: no filing-text metrics configured, skipping`)
@@ -46,9 +40,13 @@ async function ingestFilingMetrics(
   }
 
   const submissions = await (await fetchSec(submissionsUrl(company.cik), 'application/json')).json()
-  const filings = findRecentFilings(submissions, ['10-Q'], OPERATING_FILING_HISTORY_LIMIT)
+  const filings = findRecentFilings(
+    submissions,
+    [...OPERATING_FILING_FORMS],
+    OPERATING_FILING_HISTORY_LIMIT,
+  )
   if (filings.length === 0) {
-    console.log(`${company.ticker}: no recent 10-Q found`)
+    console.log(`${company.ticker}: no recent 10-Q/10-K found`)
     return { urls: 1, rows: 0 }
   }
 
@@ -87,10 +85,10 @@ async function ingestFilingMetrics(
       }))
     })
 
-    await deleteFilingTextFacts(db, companyId, filing.accession)
-    rowCount += await upsertCompanyFacts(db, companyId, facts, documentUrl, retrievedAt)
+    await writer.deleteFilingTextFacts(company, filing.accession)
+    rowCount += await writer.upsertCompanyFacts(company, facts, documentUrl, retrievedAt)
     console.log(
-      `${company.ticker}: ${filing.reportDate} filing metrics ${metrics.map((metric) => metric.metric).join(', ')}`,
+      `${company.ticker}: ${filing.form} ${filing.reportDate} filing metrics ${metrics.map((metric) => metric.metric).join(', ')}`,
     )
   }
 
@@ -98,9 +96,11 @@ async function ingestFilingMetrics(
 }
 
 async function main(): Promise<void> {
-  const db = openLocalDatabase()
-  const runId = await startIngestRun(db, SEC_SOURCE, {
+  const localDb = process.env.INGEST_REMOTE_URL ? undefined : openLocalDatabase()
+  const writer = createIngestWriterFromEnv(localDb)
+  const runId = await writer.startRun(SEC_SOURCE, {
     companies: SEC_COMPANIES.map((company) => company.ticker),
+    forms: OPERATING_FILING_FORMS,
   })
 
   let urlCount = 0
@@ -114,25 +114,29 @@ async function main(): Promise<void> {
       const retrievedAt = new Date().toISOString()
 
       const parsed = parseCompanyFacts(await response.json())
-      const companyId = await resolveCompanyId(db, company)
-      const upserted = await upsertCompanyFacts(db, companyId, parsed.facts, url, retrievedAt)
+      const upserted = await writer.upsertCompanyFacts(
+        company,
+        parsed.facts,
+        url,
+        retrievedAt,
+      )
       rowCount += upserted
 
       console.log(`${company.ticker} (${parsed.entityName}): ${upserted} facts`)
       await new Promise((resolve) => setTimeout(resolve, REQUEST_INTERVAL_MS))
 
-      const filingResult = await ingestFilingMetrics(db, company, companyId)
+      const filingResult = await ingestFilingMetrics(writer, company)
       urlCount += filingResult.urls
       rowCount += filingResult.rows
       await new Promise((resolve) => setTimeout(resolve, REQUEST_INTERVAL_MS))
     }
 
-    await finishIngestRun(db, runId, 'completed', urlCount, rowCount)
+    await writer.finishRun(runId, 'completed', urlCount, rowCount)
     console.log(`Done. companies=${SEC_COMPANIES.length} facts=${rowCount}`)
   }
   catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    await finishIngestRun(db, runId, 'failed', urlCount, rowCount, message)
+    await writer.finishRun(runId, 'failed', urlCount, rowCount, message)
     console.error(message)
     process.exitCode = 1
   }

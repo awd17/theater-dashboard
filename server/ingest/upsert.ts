@@ -10,7 +10,7 @@ import {
   movies,
   upcomingReleases,
 } from '../db/schema'
-import type { LocalDatabase } from './local-db'
+import { firstRow, type IngestDatabase } from './db-helpers'
 import {
   absoluteTheNumbersUrl,
   DOMESTIC_TERRITORY,
@@ -24,32 +24,38 @@ import { TMDB_SOURCE, tmdbMovieUrl } from './sources/tmdb/client'
 import type { UpcomingTheatricalRelease } from './sources/tmdb/upcoming'
 
 async function resolveMovieIdBySource(
-  db: LocalDatabase,
+  db: IngestDatabase,
   source: string,
   title: string,
   externalId: string,
   sourceUrl: string,
 ): Promise<number> {
-  const existing = await db
-    .select()
-    .from(movieExternalIds)
-    .where(
-      and(
-        eq(movieExternalIds.source, source),
-        eq(movieExternalIds.externalId, externalId),
+  const existing = await firstRow(
+    db
+      .select()
+      .from(movieExternalIds)
+      .where(
+        and(
+          eq(movieExternalIds.source, source),
+          eq(movieExternalIds.externalId, externalId),
+        ),
       ),
-    )
-    .get()
+  )
 
   if (existing) {
     return existing.movieId
   }
 
-  const inserted = await db
-    .insert(movies)
-    .values({ canonicalTitle: title })
-    .returning({ id: movies.id })
-    .get()
+  const inserted = await firstRow(
+    db
+      .insert(movies)
+      .values({ canonicalTitle: title })
+      .returning({ id: movies.id }),
+  )
+
+  if (!inserted) {
+    throw new Error(`Failed to insert movie for ${source}:${externalId}`)
+  }
 
   await db.insert(movieExternalIds).values({
     movieId: inserted.id,
@@ -62,7 +68,7 @@ async function resolveMovieIdBySource(
 }
 
 function resolveMovieId(
-  db: LocalDatabase,
+  db: IngestDatabase,
   title: string,
   externalId: string,
   sourceUrl: string,
@@ -71,7 +77,7 @@ function resolveMovieId(
 }
 
 export async function upsertDailyChart(
-  db: LocalDatabase,
+  db: IngestDatabase,
   chart: DailyChart,
   sourceUrl: string,
   retrievedAt: string,
@@ -128,7 +134,7 @@ export async function upsertDailyChart(
 }
 
 export async function upsertMarketYear(
-  db: LocalDatabase,
+  db: IngestDatabase,
   year: MarketYear,
   sourceUrl: string,
   retrievedAt: string,
@@ -171,7 +177,7 @@ export async function upsertMarketYear(
 }
 
 export async function upsertMarketYearDistributors(
-  db: LocalDatabase,
+  db: IngestDatabase,
   year: MarketYear,
   sourceUrl: string,
   retrievedAt: string,
@@ -217,7 +223,7 @@ export async function upsertMarketYearDistributors(
 }
 
 export async function upsertUpcomingReleases(
-  db: LocalDatabase,
+  db: IngestDatabase,
   releases: UpcomingTheatricalRelease[],
   retrievedAt: string,
 ): Promise<number> {
@@ -271,30 +277,36 @@ export async function upsertUpcomingReleases(
 }
 
 export async function resolveCompanyId(
-  db: LocalDatabase,
+  db: IngestDatabase,
   company: { ticker: string, name: string, cik: string },
 ): Promise<number> {
-  const existing = await db
-    .select({ id: companies.id })
-    .from(companies)
-    .where(eq(companies.ticker, company.ticker))
-    .get()
+  const existing = await firstRow(
+    db
+      .select({ id: companies.id })
+      .from(companies)
+      .where(eq(companies.ticker, company.ticker)),
+  )
 
   if (existing) {
     return existing.id
   }
 
-  const inserted = await db
-    .insert(companies)
-    .values(company)
-    .returning({ id: companies.id })
-    .get()
+  const inserted = await firstRow(
+    db
+      .insert(companies)
+      .values(company)
+      .returning({ id: companies.id }),
+  )
+
+  if (!inserted) {
+    throw new Error(`Failed to insert company ${company.ticker}`)
+  }
 
   return inserted.id
 }
 
 export async function upsertCompanyFacts(
-  db: LocalDatabase,
+  db: IngestDatabase,
   companyId: number,
   facts: Array<{
     metric: string
@@ -344,7 +356,7 @@ export async function upsertCompanyFacts(
 }
 
 export async function deleteFilingTextFacts(
-  db: LocalDatabase,
+  db: IngestDatabase,
   companyId: number,
   accession: string,
 ): Promise<void> {
@@ -360,27 +372,32 @@ export async function deleteFilingTextFacts(
 }
 
 export async function startIngestRun(
-  db: LocalDatabase,
+  db: IngestDatabase,
   source: string,
   meta: Record<string, unknown>,
 ): Promise<number> {
   const startedAt = new Date().toISOString()
-  const row = await db
-    .insert(ingestRun)
-    .values({
-      source,
-      status: 'running',
-      startedAt,
-      metaJson: JSON.stringify(meta),
-    })
-    .returning({ id: ingestRun.id })
-    .get()
+  const row = await firstRow(
+    db
+      .insert(ingestRun)
+      .values({
+        source,
+        status: 'running',
+        startedAt,
+        metaJson: JSON.stringify(meta),
+      })
+      .returning({ id: ingestRun.id }),
+  )
+
+  if (!row) {
+    throw new Error(`Failed to start ingest run for ${source}`)
+  }
 
   return row.id
 }
 
 export async function finishIngestRun(
-  db: LocalDatabase,
+  db: IngestDatabase,
   id: number,
   status: 'completed' | 'failed',
   urlCount: number,
@@ -397,4 +414,18 @@ export async function finishIngestRun(
       errorMessage: errorMessage ?? null,
     })
     .where(eq(ingestRun.id, id))
+}
+
+export async function hasActiveIngestRun(
+  db: IngestDatabase,
+  source: string,
+): Promise<boolean> {
+  const active = await firstRow(
+    db
+      .select({ id: ingestRun.id })
+      .from(ingestRun)
+      .where(and(eq(ingestRun.source, source), eq(ingestRun.status, 'running'))),
+  )
+
+  return active !== undefined
 }

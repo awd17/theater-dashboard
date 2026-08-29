@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 
 const USER_AGENT = 'TheaterIndustryDashboard/0.1 (+local-ingest; research)'
 const DEFAULT_MIN_INTERVAL_MS = 1_000
+const DEFAULT_FIRECRAWL_MAX_PER_RUN = 20
 
 let lastRequestAt = 0
 
@@ -14,10 +15,29 @@ export interface FetchHtmlResult {
   via: 'native' | 'cache' | 'firecrawl'
 }
 
+export interface FetchStats {
+  native: number
+  cache: number
+  firecrawl: number
+}
+
+const stats: FetchStats = {
+  native: 0,
+  cache: 0,
+  firecrawl: 0,
+}
+
 export class PageNotFoundError extends Error {
   constructor(url: string) {
     super(`Page not found: ${url}`)
     this.name = 'PageNotFoundError'
+  }
+}
+
+export class FirecrawlBudgetExceededError extends Error {
+  constructor(limit: number) {
+    super(`Firecrawl budget exceeded for this run (max ${limit})`)
+    this.name = 'FirecrawlBudgetExceededError'
   }
 }
 
@@ -56,6 +76,18 @@ function isUsableHtml(html: string): boolean {
   return html.length >= MIN_USABLE_HTML_LENGTH && !looksBlocked(200, html)
 }
 
+function firecrawlMaxPerRun(): number {
+  const raw = process.env.FIRECRAWL_MAX_PER_RUN
+  if (!raw) {
+    return DEFAULT_FIRECRAWL_MAX_PER_RUN
+  }
+  const parsed = Number(raw)
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`Invalid FIRECRAWL_MAX_PER_RUN: ${raw}`)
+  }
+  return parsed
+}
+
 async function fetchNative(url: string): Promise<{ status: number, html: string }> {
   const response = await fetch(url, {
     headers: {
@@ -88,6 +120,16 @@ async function fetchFirecrawl(url: string): Promise<string> {
   return html
 }
 
+export function resetFetchStats(): void {
+  stats.native = 0
+  stats.cache = 0
+  stats.firecrawl = 0
+}
+
+export function getFetchStats(): FetchStats {
+  return { ...stats }
+}
+
 export async function fetchHtml(
   url: string,
   options: {
@@ -105,6 +147,7 @@ export async function fetchHtml(
     try {
       const html = await readFile(cachePath, 'utf8')
       if (isUsableHtml(html)) {
+        stats.cache += 1
         return { html, url, retrievedAt, via: 'cache' }
       }
     }
@@ -128,12 +171,19 @@ export async function fetchHtml(
   ) {
     await mkdir(dirname(cachePath), { recursive: true })
     await writeFile(cachePath, native.html, 'utf8')
+    stats.native += 1
     return { html: native.html, url, retrievedAt, via: 'native' }
+  }
+
+  const firecrawlLimit = firecrawlMaxPerRun()
+  if (stats.firecrawl >= firecrawlLimit) {
+    throw new FirecrawlBudgetExceededError(firecrawlLimit)
   }
 
   await respectRateLimit(minIntervalMs)
   const html = await fetchFirecrawl(url)
   await mkdir(dirname(cachePath), { recursive: true })
   await writeFile(cachePath, html, 'utf8')
+  stats.firecrawl += 1
   return { html, url, retrievedAt, via: 'firecrawl' }
 }

@@ -2,6 +2,7 @@
 
 export interface CloudflareEnv {
   DB: D1Database
+  INGEST_TOKEN?: string
 }
 
 declare module 'h3' {

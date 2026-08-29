@@ -1,13 +1,19 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "theater-industry-dashboard",
-  "compatibility_date": "2025-07-15",
+  "compatibility_date": "2026-08-29",
   "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 0.1
+  },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "theater-industry-dashboard",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "481d573e-4dc5-448c-b9fd-8984f26a5d74",
       "migrations_dir": "server/db/migrations"
     }
   ]

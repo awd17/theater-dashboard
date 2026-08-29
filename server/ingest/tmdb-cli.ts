@@ -4,7 +4,7 @@ import {
   extractTheatricalReleases,
   type TheatricalCandidate,
 } from './sources/tmdb/upcoming'
-import { finishIngestRun, startIngestRun, upsertUpcomingReleases } from './upsert'
+import { createIngestWriterFromEnv } from './writer'
 
 interface CliArgs {
   region: string
@@ -35,6 +35,10 @@ function parseArgs(argv: string[]): CliArgs {
     if (flag === '--help' || flag === '-h') {
       console.log(`Usage:
   bun run ingest:tmdb [--region US] [--days 180]
+
+Remote mode:
+  INGEST_REMOTE_URL=https://your-worker.workers.dev
+  INGEST_TOKEN=...
 `)
       process.exit(0)
     }
@@ -62,8 +66,9 @@ async function main(): Promise<void> {
   to.setUTCDate(to.getUTCDate() + args.days)
   const toDate = isoDate(to)
 
-  const db = openLocalDatabase()
-  const runId = await startIngestRun(db, TMDB_SOURCE, { ...args, fromDate, toDate })
+  const localDb = process.env.INGEST_REMOTE_URL ? undefined : openLocalDatabase()
+  const writer = createIngestWriterFromEnv(localDb)
+  const runId = await writer.startRun(TMDB_SOURCE, { ...args, fromDate, toDate })
   const client = new TmdbClient({ apiKey })
 
   let urlCount = 0
@@ -101,6 +106,7 @@ async function main(): Promise<void> {
 
     const retrievedAt = new Date().toISOString()
     let confirmedMovies = 0
+    const confirmedReleases = []
 
     for (const candidate of candidates.values()) {
       const releaseDates = await client.movieReleaseDates(candidate.tmdbId)
@@ -117,17 +123,19 @@ async function main(): Promise<void> {
       }
 
       confirmedMovies += 1
-      rowCount += await upsertUpcomingReleases(db, releases, retrievedAt)
+      confirmedReleases.push(...releases)
     }
 
-    await finishIngestRun(db, runId, 'completed', urlCount, rowCount)
+    rowCount += await writer.upsertUpcomingReleases(confirmedReleases, retrievedAt)
+
+    await writer.finishRun(runId, 'completed', urlCount, rowCount)
     console.log(
       `Done. candidates=${candidates.size} confirmed=${confirmedMovies} releases=${rowCount} requests=${urlCount}`,
     )
   }
   catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    await finishIngestRun(db, runId, 'failed', urlCount, rowCount, message)
+    await writer.finishRun(runId, 'failed', urlCount, rowCount, message)
     console.error(message)
     process.exitCode = 1
   }

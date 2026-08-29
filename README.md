@@ -1,9 +1,10 @@
 # Theater Industry Dashboard
 
-Nuxt 4 SaaS app with oRPC, Drizzle, and Cloudflare D1.
+Nuxt 4 app with oRPC, Drizzle, and Cloudflare D1.
 
 ```bash
 bun install
+bun run db:migrate
 bun run dev
 ```
 
@@ -20,3 +21,9 @@ Create tables in `server/db/schema.ts`, then:
 bun run db:generate
 bun run db:migrate
 ```
+
+## Deploy
+
+Production runs on Cloudflare Workers Free with scheduled ingestion in GitHub Actions.
+
+See [docs/deployment.md](docs/deployment.md) for free-tier limits, secrets, schedules, and recovery.
