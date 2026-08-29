@@ -6,7 +6,7 @@ defineProps<{
 </script>
 
 <template>
-  <Card>
+  <Card class="min-w-0">
     <CardHeader>
       <CardTitle class="text-base font-medium tracking-tight">
         {{ title }}

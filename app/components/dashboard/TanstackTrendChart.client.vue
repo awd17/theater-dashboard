@@ -18,6 +18,10 @@ const props = defineProps<{
 }>()
 
 const FALLBACK_COLORS = ['#93c5fd', '#1d4ed8', '#0f172a', '#0d9488', '#c2410c']
+const tooltipOptions = {
+  use: tooltip,
+  placement: ['right', 'left'] as const,
+}
 const ready = ref(false)
 const renderError = ref<string | null>(null)
 
@@ -86,7 +90,7 @@ const definition = computed(() => {
         ),
       },
     },
-    { tooltip },
+    { tooltip: tooltipOptions },
   )
 })
 
@@ -97,17 +101,17 @@ onErrorCaptured((error) => {
 </script>
 
 <template>
-  <div class="h-full w-full">
+  <div class="h-full min-w-0 w-full">
     <p v-if="renderError" class="text-sm text-destructive">
       Chart error: {{ renderError }}
     </p>
     <Chart
       v-else-if="definition"
-      class="h-full w-full"
+      class="h-full min-w-0 w-full"
       :definition="definition"
       :aria-label="chartAriaLabel"
       :height="Math.max(height, 200)"
-      :width="720"
+      :initial-width="720"
     />
     <div
       v-else

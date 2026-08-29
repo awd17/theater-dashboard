@@ -18,9 +18,12 @@ const props = defineProps<{
 }>()
 
 const FALLBACK_COLORS = ['#93c5fd', '#1d4ed8', '#0f172a', '#0d9488', '#c2410c']
+const tooltipOptions = {
+  use: tooltip,
+  placement: ['right', 'left'] as const,
+}
 
 const ready = ref(false)
-const chartWidth = ref(720)
 
 onMounted(() => {
   ready.value = true
@@ -92,13 +95,13 @@ const definition = computed(() => {
         ),
       },
     },
-    { tooltip },
+    { tooltip: tooltipOptions },
   )
 })
 </script>
 
 <template>
-  <div class="h-full w-full">
+  <div class="h-full min-w-0 w-full">
     <div
       v-if="!definition"
       class="flex h-full items-center text-sm text-muted-foreground"
@@ -107,11 +110,11 @@ const definition = computed(() => {
     </div>
     <Chart
       v-else
-      class="h-full w-full"
+      class="h-full min-w-0 w-full"
       :definition="definition"
       :aria-label="chartAriaLabel"
       :height="height"
-      :width="chartWidth"
+      :initial-width="720"
     />
   </div>
 </template>

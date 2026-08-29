@@ -66,7 +66,7 @@ const chartHeight = computed(() => {
 
 <template>
   <div
-    class="flex w-full flex-col gap-3"
+    class="flex min-w-0 w-full flex-col gap-3"
     :class="heightClass ?? 'h-[260px]'"
   >
     <div
@@ -82,7 +82,7 @@ const chartHeight = computed(() => {
         {{ entry.label }}
       </div>
     </div>
-    <div class="min-h-0 flex-1">
+    <div class="min-h-0 min-w-0 flex-1">
       <div
         v-if="rows.length === 0 || seriesMeta.length === 0"
         class="flex h-full items-center text-sm text-muted-foreground"
