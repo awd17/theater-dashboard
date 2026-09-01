@@ -6,6 +6,7 @@ import type { IngestDatabase } from './db-helpers'
 import type { DailyChart } from './sources/the-numbers/daily-chart'
 import type { MarketYear } from './sources/the-numbers/market-summary'
 import type { UpcomingTheatricalRelease } from './sources/tmdb/upcoming'
+import { withRetries } from './retry'
 import {
   deleteFilingTextFacts,
   finishIngestRun,
@@ -18,9 +19,8 @@ import {
   upsertUpcomingReleases,
 } from './upsert'
 
-const DEFAULT_MAX_ATTEMPTS = 4
 const UPCOMING_CHUNK_SIZE = 100
-const FACTS_CHUNK_SIZE = 400
+const FACTS_CHUNK_SIZE = 96
 
 export interface IngestWriter {
   startRun: (source: string, meta: Record<string, unknown>) => Promise<number>
@@ -67,53 +67,6 @@ export interface IngestWriter {
     company: { ticker: string, name: string, cik: string },
     accession: string,
   ) => Promise<void>
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-function isRetryableError(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false
-  }
-  const message = error.message.toLowerCase()
-  return (
-    message.includes('429')
-    || message.includes('502')
-    || message.includes('503')
-    || message.includes('504')
-    || message.includes('timeout')
-    || message.includes('network')
-    || message.includes('fetch failed')
-  )
-}
-
-async function withRetries<T>(
-  label: string,
-  run: () => Promise<T>,
-  maxAttempts = DEFAULT_MAX_ATTEMPTS,
-): Promise<T> {
-  let attempt = 0
-  let lastError: unknown
-
-  while (attempt < maxAttempts) {
-    attempt += 1
-    try {
-      return await run()
-    }
-    catch (error) {
-      lastError = error
-      if (!isRetryableError(error) || attempt >= maxAttempts) {
-        throw error
-      }
-      const delayMs = 500 * 2 ** (attempt - 1)
-      console.warn(`${label} failed (attempt ${attempt}/${maxAttempts}), retrying in ${delayMs}ms`)
-      await sleep(delayMs)
-    }
-  }
-
-  throw lastError
 }
 
 function chunkArray<T>(items: T[], size: number): T[][] {

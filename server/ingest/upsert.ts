@@ -1,4 +1,4 @@
-import { and, eq, like } from 'drizzle-orm'
+import { and, eq, like, sql } from 'drizzle-orm'
 import {
   boxOfficeDaily,
   companies,
@@ -305,54 +305,98 @@ export async function resolveCompanyId(
   return inserted.id
 }
 
+const COMPANY_FACTS_ROWS_PER_STATEMENT = 6
+const COMPANY_FACTS_STATEMENTS_PER_BATCH = 40
+
+type CompanyFactWrite = {
+  metric: string
+  concept: string
+  unit: string
+  periodStart: string
+  periodEnd: string
+  value: number
+  fiscalYear: number | null
+  fiscalPeriod: string | null
+  form: string
+  filedDate: string
+  accession: string
+}
+
+type BatchableDatabase = {
+  batch: (statements: [unknown, ...unknown[]]) => Promise<unknown>
+}
+
+function canBatch(db: IngestDatabase): db is IngestDatabase & BatchableDatabase {
+  return typeof (db as IngestDatabase & Partial<BatchableDatabase>).batch === 'function'
+}
+
+function companyFactsConflictSet() {
+  return {
+    metric: sql`excluded.metric`,
+    value: sql`excluded.value`,
+    fiscalYear: sql`excluded.fiscal_year`,
+    fiscalPeriod: sql`excluded.fiscal_period`,
+    form: sql`excluded.form`,
+    filedDate: sql`excluded.filed_date`,
+    sourceUrl: sql`excluded.source_url`,
+    retrievedAt: sql`excluded.retrieved_at`,
+  }
+}
+
 export async function upsertCompanyFacts(
   db: IngestDatabase,
   companyId: number,
-  facts: Array<{
-    metric: string
-    concept: string
-    unit: string
-    periodStart: string
-    periodEnd: string
-    value: number
-    fiscalYear: number | null
-    fiscalPeriod: string | null
-    form: string
-    filedDate: string
-    accession: string
-  }>,
+  facts: CompanyFactWrite[],
   sourceUrl: string,
   retrievedAt: string,
 ): Promise<number> {
-  let rowCount = 0
-
-  for (const fact of facts) {
-    await db
-      .insert(companyFacts)
-      .values({ ...fact, companyId, sourceUrl, retrievedAt })
-      .onConflictDoUpdate({
-        target: [
-          companyFacts.companyId,
-          companyFacts.concept,
-          companyFacts.unit,
-          companyFacts.periodStart,
-          companyFacts.periodEnd,
-          companyFacts.accession,
-        ],
-        set: {
-          value: fact.value,
-          fiscalYear: fact.fiscalYear,
-          fiscalPeriod: fact.fiscalPeriod,
-          form: fact.form,
-          filedDate: fact.filedDate,
-          sourceUrl,
-          retrievedAt,
-        },
-      })
-    rowCount += 1
+  if (facts.length === 0) {
+    return 0
   }
 
-  return rowCount
+  const statements = []
+  for (let index = 0; index < facts.length; index += COMPANY_FACTS_ROWS_PER_STATEMENT) {
+    const rows = facts.slice(index, index + COMPANY_FACTS_ROWS_PER_STATEMENT).map((fact) => ({
+      ...fact,
+      companyId,
+      sourceUrl,
+      retrievedAt,
+    }))
+    statements.push(
+      db
+        .insert(companyFacts)
+        .values(rows)
+        .onConflictDoUpdate({
+          target: [
+            companyFacts.companyId,
+            companyFacts.concept,
+            companyFacts.unit,
+            companyFacts.periodStart,
+            companyFacts.periodEnd,
+            companyFacts.accession,
+          ],
+          set: companyFactsConflictSet(),
+        }),
+    )
+  }
+
+  if (canBatch(db)) {
+    for (let index = 0; index < statements.length; index += COMPANY_FACTS_STATEMENTS_PER_BATCH) {
+      const batch = statements.slice(index, index + COMPANY_FACTS_STATEMENTS_PER_BATCH)
+      const first = batch[0]
+      if (!first) {
+        continue
+      }
+      await db.batch([first, ...batch.slice(1)])
+    }
+  }
+  else {
+    for (const statement of statements) {
+      await statement
+    }
+  }
+
+  return facts.length
 }
 
 export async function deleteFilingTextFacts(
