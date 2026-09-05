@@ -1,9 +1,18 @@
 import { and, eq, gte } from 'drizzle-orm'
 import { z } from 'zod'
 import { getDatabase } from '../../db/client'
-import { movies, upcomingReleases } from '../../db/schema'
-import { buildOutlookSnapshot } from '../../ingest/outlook-metrics'
+import { marketDistributorYear, movies, upcomingReleases } from '../../db/schema'
+import {
+  buildForwardWindowComparison,
+  buildHistoricalReleaseVolume,
+  buildOutlookSnapshot,
+  FORWARD_COMPARISON_WINDOW_DAYS,
+} from '../../ingest/outlook-metrics'
 import { TMDB_SOURCE } from '../../ingest/sources/tmdb/client'
+import {
+  DOMESTIC_TERRITORY,
+  THE_NUMBERS_SOURCE,
+} from '../../ingest/sources/the-numbers/constants'
 import { pub } from '../context'
 
 export const outlookSnapshotSchema = z.object({
@@ -14,6 +23,21 @@ export const outlookSnapshotSchema = z.object({
   next180DayCount: z.number().int(),
   next90DayWideCount: z.number().int(),
   monthlyCounts: z.array(z.object({ month: z.string(), count: z.number().int() })),
+  monthlySplit: z.array(z.object({
+    month: z.string(),
+    total: z.number().int(),
+    wide: z.number().int(),
+    limited: z.number().int(),
+  })),
+  mixByReleaseType: z.array(z.object({ releaseType: z.string(), count: z.number().int() })),
+  mixByCertification: z.array(z.object({ certification: z.string(), count: z.number().int() })),
+  historicalReleaseVolume: z.array(z.object({ periodLabel: z.string(), titleCount: z.number().int() })),
+  forwardWindowComparison: z.object({
+    windowDays: z.number().int(),
+    currentCount: z.number().int(),
+    priorYearSameWindowCount: z.number().nullable(),
+  }),
+  hasData: z.boolean(),
   upcomingWideReleases: z.array(
     z.object({ title: z.string(), releaseDate: z.string() }),
   ),
@@ -38,6 +62,16 @@ export const snapshot = pub
         next180DayCount: 0,
         next90DayWideCount: 0,
         monthlyCounts: [],
+        monthlySplit: [],
+        mixByReleaseType: [],
+        mixByCertification: [],
+        historicalReleaseVolume: [],
+        forwardWindowComparison: {
+          windowDays: FORWARD_COMPARISON_WINDOW_DAYS,
+          currentCount: 0,
+          priorYearSameWindowCount: null,
+        },
+        hasData: false,
         upcomingWideReleases: [],
       }
     }
@@ -48,6 +82,7 @@ export const snapshot = pub
         title: movies.canonicalTitle,
         releaseDate: upcomingReleases.releaseDate,
         releaseType: upcomingReleases.releaseType,
+        certification: upcomingReleases.certification,
         popularity: upcomingReleases.popularity,
         primaryReleaseDate: upcomingReleases.primaryReleaseDate,
       })
@@ -61,8 +96,25 @@ export const snapshot = pub
         ),
       )
 
+    const distributorRows = await db
+      .select({
+        periodLabel: marketDistributorYear.periodLabel,
+        titleCount: marketDistributorYear.titleCount,
+        isPartial: marketDistributorYear.isPartial,
+      })
+      .from(marketDistributorYear)
+      .where(
+        and(
+          eq(marketDistributorYear.source, THE_NUMBERS_SOURCE),
+          eq(marketDistributorYear.geography, DOMESTIC_TERRITORY),
+        ),
+      )
+
+    const snapshot = buildOutlookSnapshot(rows, input.asOfDate)
     return outlookSnapshotSchema.parse({
-      ...buildOutlookSnapshot(rows, input.asOfDate),
+      ...snapshot,
       region: REGION,
+      historicalReleaseVolume: buildHistoricalReleaseVolume(distributorRows),
+      forwardWindowComparison: buildForwardWindowComparison(snapshot.next180DayCount, distributorRows),
     })
   })

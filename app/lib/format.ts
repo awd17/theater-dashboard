@@ -112,3 +112,49 @@ export function deltaTone(ratio: number | null | undefined): 'positive' | 'negat
   }
   return ratio > 0 ? 'positive' : 'negative'
 }
+export function formatFiscalQuarter(fiscalYear: number | null | undefined, fiscalPeriod: string | null | undefined): string | null {
+  if (fiscalYear === null || fiscalYear === undefined || !fiscalPeriod) {
+    return null
+  }
+  return `${fiscalPeriod} FY${fiscalYear}`
+}
+
+export function formatCalendarQuarter(periodEnd: string | null | undefined): string {
+  if (!periodEnd) {
+    return '—'
+  }
+  const [year, month] = periodEnd.split('-')
+  return `Q${Math.ceil(Number(month) / 3)} ${year} cal`
+}
+
+export function formatQuarterIdentity(entry: {
+  label: string | null | undefined
+  periodEnd: string | null | undefined
+  fiscalYear: number | null | undefined
+  fiscalPeriod: string | null | undefined
+  calendarLabel: string | null | undefined
+} | null | undefined): string {
+  if (!entry || !entry.periodEnd) {
+    return '—'
+  }
+  const label = entry.label ?? formatCalendarQuarter(entry.periodEnd)
+  const fiscal = formatFiscalQuarter(entry.fiscalYear ?? null, entry.fiscalPeriod ?? null)
+  const calendar = entry.calendarLabel ?? formatCalendarQuarter(entry.periodEnd)
+  if (!fiscal) {
+    return calendar
+  }
+  if (label === calendar) {
+    return `${label} (fiscal = calendar)`
+  }
+  return `${label} fiscal (${calendar} calendar)`
+}
+
+export function formatQuarterPeriodRange(entry: {
+  periodStart: string | null | undefined
+  periodEnd: string | null | undefined
+} | null | undefined): string {
+  if (!entry || !entry.periodStart || !entry.periodEnd) {
+    return 'period dates undisclosed'
+  }
+  return `${entry.periodStart} → ${entry.periodEnd}`
+}

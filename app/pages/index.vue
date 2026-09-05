@@ -11,10 +11,16 @@ import {
 
 const orpc = useORPC()
 
-const { data: industry, status: industryStatus } = await useRpcData(
-  'industry-snapshot',
-  () => orpc.industry.snapshot(),
+const recoveryBaseline = ref<'2019' | 'avg2017_2019'>('2019')
+
+const { data: industry, status: industryStatus, refresh: refreshIndustry } = await useRpcData(
+  () => `industry-snapshot-${recoveryBaseline.value}`,
+  () => orpc.industry.snapshot({ baseline: recoveryBaseline.value }),
 )
+
+watch(recoveryBaseline, () => {
+  void refreshIndustry()
+})
 
 const { data: trend, status: trendStatus } = await useRpcData(
   'industry-trend',
@@ -46,17 +52,20 @@ const monthlyBars = computed(() => {
 
   return Array.from({ length: 12 }, (_, index) => {
     const monthNumber = index + 1
-    const values = years.map((year, yearIndex) => ({
-      key: String(year),
-      label: String(year),
-      value: (byYear.get(year)?.get(monthNumber) ?? 0) / 100 / 1_000_000,
-      color: yearColors[yearIndex % yearColors.length]!,
-    }))
+    const values = years.map((year, yearIndex) => {
+      const cents = byYear.get(year)?.get(monthNumber) ?? null
+      return {
+        key: String(year),
+        label: String(year),
+        value: cents === null ? null : cents / 100 / 1_000_000,
+        color: yearColors[yearIndex % yearColors.length]!,
+      }
+    })
     return {
       label: monthLabels[index]!,
       values,
     }
-  }).filter((item) => item.values.some((series) => series.value > 0))
+  }).filter((item) => item.values.some((series) => series.value !== null && series.value > 0))
 })
 
 const cumulativeLines = computed(() => {
@@ -82,11 +91,11 @@ const cumulativeLines = computed(() => {
 
 const marketBars = computed(() =>
   (industry.value?.marketYears ?? []).slice(-12).map((year) => ({
-    label: year.periodLabel,
+    label: `${year.periodLabel} cal`,
     values: [{
       key: 'boxOffice',
       label: 'Box office',
-      value: year.boxOfficeCents === null ? 0 : year.boxOfficeCents / 100 / 1_000_000_000,
+      value: year.boxOfficeCents === null ? null : year.boxOfficeCents / 100 / 1_000_000_000,
       color: 'var(--chart-2)',
     }],
   })),
@@ -95,17 +104,78 @@ const marketBars = computed(() =>
 const recentMarketYears = computed(() =>
   [...(industry.value?.marketYears ?? [])].slice(-12).reverse(),
 )
+
+const seasonality = computed(() => trend.value?.seasonality ?? null)
+
+const heatmapMaxCents = computed(() => {
+  let max = 0
+  for (const row of seasonality.value?.months ?? []) {
+    for (const value of Object.values(row.values)) {
+      if (value !== null && value > max) {
+        max = value
+      }
+    }
+  }
+  return max
+})
+
+function heatmapCellStyle(cents: number | null): string {
+  if (cents === null || heatmapMaxCents.value === 0) {
+    return 'background-color: transparent;'
+  }
+  const intensity = cents / heatmapMaxCents.value
+  return `background-color: color-mix(in srgb, var(--chart-2) ${Math.round(intensity * 85)}%, transparent);`
+}
+
+const recoveryBaselineLabel = computed(() =>
+  recoveryBaseline.value === '2019' ? '2019' : '2017–19 avg',
+)
+
+const recoveryExplainer = computed(() =>
+  recoveryBaseline.value === '2019'
+    ? 'Latest completed box-office year as a share of 2019, from The Numbers market totals.'
+    : 'Latest completed box-office year as a share of the 2017–2019 average. Null when any baseline year is missing.',
+)
+
+const releaseVolumeBars = computed(() =>
+  (industry.value?.releaseVolume ?? []).map((entry) => ({
+    label: entry.periodLabel,
+    values: [{
+      key: 'titles',
+      label: 'Titles',
+      value: entry.titleCount,
+      color: 'var(--chart-4)',
+    }],
+  })),
+)
+
+function heatmapTitle(year: number, monthNumber: number, cents: number | null): string {
+  const label = `${monthLabels[monthNumber - 1]} ${year}`
+  return cents === null ? `${label}: no data` : `${label}: ${formatUsd(cents)}`
+}
 </script>
 
 <template>
   <div class="space-y-8">
-    <div class="space-y-1.5">
-      <h1 class="font-heading text-2xl font-semibold tracking-tight sm:text-3xl">
-        Industry Overview
-      </h1>
-      <p class="max-w-2xl text-sm text-muted-foreground">
-        Domestic theatrical demand, recovery versus pre-pandemic levels, and distributor concentration.
-      </p>
+    <div class="flex flex-wrap items-end justify-between gap-4">
+      <div class="space-y-1.5">
+        <h1 class="font-heading text-2xl font-semibold tracking-tight sm:text-3xl">
+          Industry Overview
+        </h1>
+        <p class="max-w-2xl text-sm text-muted-foreground">
+          Domestic theatrical demand, recovery versus pre-pandemic levels, and distributor concentration.
+        </p>
+      </div>
+      <label class="flex items-center gap-2 text-sm text-muted-foreground">
+        Recovery baseline
+        <select
+          v-model="recoveryBaseline"
+          class="rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground"
+        >
+          <option value="2019">2019</option>
+          <option value="avg2017_2019">2017–19 avg</option>
+        </select>
+      </label>
     </div>
 
     <div class="grid grid-cols-2 gap-3 xl:grid-cols-5 xl:gap-4">
@@ -126,12 +196,12 @@ const recentMarketYears = computed(() =>
         :loading="loading"
       />
       <DashboardKpiCard
-        label="Recovery vs 2019"
+        :label="`Recovery vs ${recoveryBaselineLabel}`"
         :value="formatRatio(industry?.recoveryVs2019Ratio)"
         :period="industry?.recoveryPeriodLabel
-          ? `${industry.recoveryPeriodLabel} vs 2019`
+          ? `${industry.recoveryPeriodLabel} vs ${industry.recoveryBaselinePeriodLabel}`
           : null"
-        explainer="Latest completed box-office year as a share of 2019, from The Numbers market totals."
+        :explainer="recoveryExplainer"
         :loading="loading"
       />
       <DashboardKpiCard
@@ -179,6 +249,45 @@ const recentMarketYears = computed(() =>
         />
       </DashboardSectionCard>
     </div>
+
+    <DashboardSectionCard
+      title="Seasonality heatmap"
+      description="Monthly domestic box office for every year since 2019. Hover a cell for the exact total."
+    >
+      <div v-if="!seasonality" class="text-sm text-muted-foreground">
+        No daily box-office history ingested yet.
+      </div>
+      <div v-else class="overflow-x-auto">
+        <table class="w-full min-w-2xl border-collapse text-xs">
+          <thead>
+            <tr>
+              <th class="sticky left-0 p-1.5 text-left font-medium text-muted-foreground">Year</th>
+              <th
+                v-for="label in monthLabels"
+                :key="label"
+                class="p-1.5 text-center font-medium text-muted-foreground"
+              >
+                {{ label }}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="year in seasonality.years" :key="year">
+              <td class="p-1.5 font-medium tabular-nums">{{ year }}</td>
+              <td
+                v-for="row in seasonality.months"
+                :key="row.monthNumber"
+                :title="heatmapTitle(year, row.monthNumber, row.values[String(year)] ?? null)"
+                :style="heatmapCellStyle(row.values[String(year)] ?? null)"
+                class="min-w-12 rounded p-1.5 text-center tabular-nums"
+              >
+                {{ row.values[String(year)] == null ? '—' : formatUsdCompact(row.values[String(year)]) }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </DashboardSectionCard>
 
     <div class="grid gap-4 xl:grid-cols-2">
       <DashboardSectionCard
@@ -242,5 +351,19 @@ const recentMarketYears = computed(() =>
         <DashboardShareBars v-else :entries="industry.distributorShares.entries" />
       </DashboardSectionCard>
     </div>
+
+    <DashboardSectionCard
+      title="Release volume"
+      description="Tracked titles per year summed across distributors."
+    >
+      <div v-if="releaseVolumeBars.length === 0" class="text-sm text-muted-foreground">
+        No release-count data ingested yet.
+      </div>
+      <DashboardGroupedBars
+        v-else
+        :items="releaseVolumeBars"
+        :format-value="(value: number) => `${value.toFixed(0)} titles`"
+      />
+    </DashboardSectionCard>
   </div>
 </template>

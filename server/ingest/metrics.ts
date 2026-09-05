@@ -83,6 +83,24 @@ export function buildDistributorShares(
     entries,
   }
 }
+export const RECOVERY_BASELINES = ['2019', 'avg2017_2019'] as const
+
+export type RecoveryBaseline = (typeof RECOVERY_BASELINES)[number]
+
+export interface ReleaseVolumeEntry {
+  periodLabel: string
+  titleCount: number
+}
+
+export function buildReleaseVolumeHistory(distributorRows: DistributorYearRow[]): ReleaseVolumeEntry[] {
+  const titlesByPeriod = new Map<string, number>()
+  for (const row of distributorRows) {
+    titlesByPeriod.set(row.periodLabel, (titlesByPeriod.get(row.periodLabel) ?? 0) + row.titleCount)
+  }
+  return [...titlesByPeriod.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([periodLabel, titleCount]) => ({ periodLabel, titleCount }))
+}
 
 export interface MarketYearEntry {
   periodLabel: string
@@ -190,33 +208,42 @@ export function computeTop10Concentration(rowsForDay: DailyGrossRow[]): number |
 
 export function computeRecoveryVs2019(
   periods: MarketPeriodRow[],
-  baselineLabel = '2019',
+  baseline: RecoveryBaseline = '2019',
 ): {
   ratio: number | null
   latestLabel: string | null
   baselineLabel: string
 } {
-  const baseline = periods.find((period) => period.periodLabel === baselineLabel)
+  const baselineYears = baseline === '2019' ? ['2019'] : ['2017', '2018', '2019']
+  const baselineValues = baselineYears.map(
+    (label) => periods.find((period) => period.periodLabel === label)?.boxOfficeCents ?? null,
+  )
+  let baselineCents: number | null = null
+  if (baseline === '2019') {
+    baselineCents = baselineValues[0] ?? null
+  } else if (baselineValues.every((value) => value !== null && value !== 0)) {
+    baselineCents = ((baselineValues[0] ?? 0) + (baselineValues[1] ?? 0) + (baselineValues[2] ?? 0)) / 3
+  }
+  const displayBaselineLabel = baseline === '2019' ? '2019' : '2017–19 avg'
+  const excluded: Record<string, true> = baseline === '2019'
+    ? { '2019': true }
+    : { '2017': true, '2018': true, '2019': true }
   const completed = periods
-    .filter((period) => period.periodLabel !== baselineLabel && period.isPartial !== true)
+    .filter((period) => !excluded[period.periodLabel] && period.isPartial !== true)
     .sort((a, b) => b.periodLabel.localeCompare(a.periodLabel))
-
   const latest = completed[0] ?? null
-
   if (
-    !baseline
-    || baseline.boxOfficeCents === null
-    || baseline.boxOfficeCents === 0
+    baselineCents === null
+    || baselineCents === 0
     || !latest
     || latest.boxOfficeCents === null
   ) {
-    return { ratio: null, latestLabel: latest?.periodLabel ?? null, baselineLabel }
+    return { ratio: null, latestLabel: latest?.periodLabel ?? null, baselineLabel: displayBaselineLabel }
   }
-
   return {
-    ratio: latest.boxOfficeCents / baseline.boxOfficeCents,
+    ratio: latest.boxOfficeCents / baselineCents,
     latestLabel: latest.periodLabel,
-    baselineLabel,
+    baselineLabel: displayBaselineLabel,
   }
 }
 
@@ -233,14 +260,60 @@ export interface YearMonthlySeries {
   cumulativeByMonth: Array<{ monthNumber: number, cumulativeCents: number }>
 }
 
+export interface SeasonalityMonthRow {
+  monthNumber: number
+  values: Record<string, number | null>
+}
+
+export interface SeasonalityMatrix {
+  years: number[]
+  months: SeasonalityMonthRow[]
+}
+
 export interface IndustryTrend {
   asOfDate: string | null
   monthlyByYear: YearMonthlySeries[]
   comparisonYears: number[]
+  seasonality: SeasonalityMatrix | null
 }
 
 function monthKey(observationDate: string): string {
   return observationDate.slice(0, 7)
+}
+
+export function buildSeasonalityMatrix(dailyRows: DailyGrossRow[]): SeasonalityMatrix | null {
+  const monthlyTotals = new Map<string, number>()
+  for (const row of dailyRows) {
+    if (row.grossCents === null) {
+      continue
+    }
+    const key = monthKey(row.observationDate)
+    monthlyTotals.set(key, (monthlyTotals.get(key) ?? 0) + row.grossCents)
+  }
+  if (monthlyTotals.size === 0) {
+    return null
+  }
+  const latestYear = Number(latestDate(dailyRows)?.slice(0, 4))
+  const years: number[] = []
+  for (let year = 2019; year <= latestYear; year += 1) {
+    years.push(year)
+  }
+  const months: SeasonalityMonthRow[] = []
+  for (let monthNumber = 1; monthNumber <= 12; monthNumber += 1) {
+    const values: Record<string, number | null> = {}
+    for (const year of years) {
+      const key = `${year}-${String(monthNumber).padStart(2, '0')}`
+      values[String(year)] = monthlyTotals.get(key) ?? null
+    }
+    if (Object.values(values).every((value) => value === null)) {
+      continue
+    }
+    months.push({ monthNumber, values })
+  }
+  if (years.length === 0 || months.length === 0) {
+    return null
+  }
+  return { years, months }
 }
 
 export function buildIndustryTrend(
@@ -253,6 +326,7 @@ export function buildIndustryTrend(
       asOfDate: null,
       monthlyByYear: [],
       comparisonYears,
+      seasonality: null,
     }
   }
 
@@ -291,17 +365,18 @@ export function buildIndustryTrend(
 
     return { year, months, cumulativeByMonth }
   })
-
   return {
     asOfDate: observationDate,
     monthlyByYear,
     comparisonYears: years,
+    seasonality: buildSeasonalityMatrix(dailyRows),
   }
 }
 
 export function buildIndustrySnapshot(
   dailyRows: DailyGrossRow[],
   marketPeriods: MarketPeriodRow[],
+  baseline: RecoveryBaseline = '2019',
 ): IndustrySnapshot {
   const observationDate = latestDate(dailyRows)
   const latestDayRows = observationDate
@@ -331,8 +406,7 @@ export function buildIndustrySnapshot(
     && priorYearComparableYtdCents !== 0
       ? ytdBoxOfficeCents / priorYearComparableYtdCents - 1
       : null
-
-  const recovery = computeRecoveryVs2019(marketPeriods)
+  const recovery = computeRecoveryVs2019(marketPeriods, baseline)
   const latestMarket = [...marketPeriods].sort((a, b) =>
     b.periodLabel.localeCompare(a.periodLabel),
   )[0] ?? null

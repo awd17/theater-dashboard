@@ -2,7 +2,7 @@
 const props = defineProps<{
   items: Array<{
     label: string
-    values: Array<{ key: string, label: string, value: number, color: string }>
+    values: Array<{ key: string, label: string, value: number | null, color: string }>
   }>
   formatValue?: (value: number) => string
   heightClass?: string
@@ -15,7 +15,7 @@ const rows = computed(() => {
   const result: Array<{ category: string, series: string, value: number }> = []
   for (const item of props.items) {
     for (const series of item.values) {
-      if (!Number.isFinite(series.value)) {
+      if (series.value === null || !Number.isFinite(series.value)) {
         continue
       }
       result.push({

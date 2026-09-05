@@ -4,6 +4,8 @@ import {
   buildIndustrySnapshot,
   buildIndustryTrend,
   buildMarketYearHistory,
+  buildReleaseVolumeHistory,
+  buildSeasonalityMatrix,
   computeRecoveryVs2019,
   computeTop10Concentration,
   type DailyGrossRow,
@@ -135,6 +137,96 @@ describe('computeRecoveryVs2019', () => {
       latestLabel: '2025',
       baselineLabel: '2019',
     })
+  })
+
+  it('averages 2017-2019 when the avg baseline is selected', () => {
+    const periods: MarketPeriodRow[] = [
+      {
+        periodLabel: '2017',
+        boxOfficeCents: 900_000,
+        ticketsSold: 90,
+        averageTicketPriceCents: 10_000,
+        isPartial: false,
+      },
+      {
+        periodLabel: '2018',
+        boxOfficeCents: 1_100_000,
+        ticketsSold: 110,
+        averageTicketPriceCents: 10_000,
+        isPartial: false,
+      },
+      {
+        periodLabel: '2019',
+        boxOfficeCents: 1_000_000,
+        ticketsSold: 100,
+        averageTicketPriceCents: 10_000,
+        isPartial: false,
+      },
+      {
+        periodLabel: '2025',
+        boxOfficeCents: 800_000,
+        ticketsSold: 70,
+        averageTicketPriceCents: 11_000,
+        isPartial: false,
+      },
+    ]
+
+    expect(computeRecoveryVs2019(periods, 'avg2017_2019')).toEqual({
+      ratio: 0.8,
+      latestLabel: '2025',
+      baselineLabel: '2017–19 avg',
+    })
+  })
+
+  it('returns null when any average-baseline year is missing', () => {
+    const periods: MarketPeriodRow[] = [
+      {
+        periodLabel: '2018',
+        boxOfficeCents: 1_100_000,
+        ticketsSold: 110,
+        averageTicketPriceCents: 10_000,
+        isPartial: false,
+      },
+      {
+        periodLabel: '2019',
+        boxOfficeCents: 1_000_000,
+        ticketsSold: 100,
+        averageTicketPriceCents: 10_000,
+        isPartial: false,
+      },
+      {
+        periodLabel: '2025',
+        boxOfficeCents: 800_000,
+        ticketsSold: 70,
+        averageTicketPriceCents: 11_000,
+        isPartial: false,
+      },
+    ]
+
+    expect(computeRecoveryVs2019(periods, 'avg2017_2019')).toEqual({
+      ratio: null,
+      latestLabel: '2025',
+      baselineLabel: '2017–19 avg',
+    })
+  })
+})
+
+describe('buildReleaseVolumeHistory', () => {
+  it('sums title counts per period label in ascending order', () => {
+    const rows: DistributorYearRow[] = [
+      { periodLabel: '2025', distributor: 'A', boxOfficeCents: 500, titleCount: 120, isPartial: false },
+      { periodLabel: '2025', distributor: 'B', boxOfficeCents: 300, titleCount: 80, isPartial: false },
+      { periodLabel: '2024', distributor: 'A', boxOfficeCents: 400, titleCount: 150, isPartial: false },
+    ]
+
+    expect(buildReleaseVolumeHistory(rows)).toEqual([
+      { periodLabel: '2024', titleCount: 150 },
+      { periodLabel: '2025', titleCount: 200 },
+    ])
+  })
+
+  it('returns an empty array without distributor rows', () => {
+    expect(buildReleaseVolumeHistory([])).toEqual([])
   })
 })
 
@@ -269,5 +361,45 @@ describe('buildIndustryTrend', () => {
       { monthNumber: 1, cumulativeCents: 200 },
       { monthNumber: 2, cumulativeCents: 500 },
     ])
+  })
+
+  it('builds a 2019-to-latest seasonality matrix with nulls for missing months', () => {
+    const dailyRows: DailyGrossRow[] = [
+      {
+        observationDate: '2019-01-15',
+        movieId: 1,
+        grossCents: 100,
+        theaterCount: 1,
+        rank: 1,
+      },
+      {
+        observationDate: '2020-01-10',
+        movieId: 1,
+        grossCents: 400,
+        theaterCount: 1,
+        rank: 1,
+      },
+      {
+        observationDate: '2020-03-10',
+        movieId: 1,
+        grossCents: 600,
+        theaterCount: 1,
+        rank: 1,
+      },
+    ]
+
+    const matrix = buildSeasonalityMatrix(dailyRows)
+
+    expect(matrix?.years).toEqual([2019, 2020])
+    expect(matrix?.months).toEqual([
+      { monthNumber: 1, values: { '2019': 100, '2020': 400 } },
+      { monthNumber: 3, values: { '2019': null, '2020': 600 } },
+    ])
+    expect(buildIndustryTrend(dailyRows).seasonality).toEqual(matrix)
+  })
+
+  it('returns null seasonality without daily rows', () => {
+    expect(buildSeasonalityMatrix([])).toBeNull()
+    expect(buildIndustryTrend([]).seasonality).toBeNull()
   })
 })

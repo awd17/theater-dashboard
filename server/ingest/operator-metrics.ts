@@ -11,6 +11,7 @@ export interface OperatorFactRow {
   fiscalYear: number | null
   fiscalPeriod: string | null
   sourceUrl?: string
+  concept?: string | null
 }
 
 export type MetricQuality = 'reported' | 'derived' | 'estimated'
@@ -20,6 +21,10 @@ export interface OperatorSnapshotEntry {
   name: string
   latestQuarterLabel: string | null
   latestQuarterEnd: string | null
+  latestPeriodStart: string | null
+  latestFiscalYear: number | null
+  latestFiscalPeriod: string | null
+  latestCalendarLabel: string | null
   revenueCents: number | null
   revenueYoyRatio: number | null
   operatingIncomeCents: number | null
@@ -49,6 +54,12 @@ export interface OperatorSnapshotEntry {
   revenuePerPatronYoyQuality: MetricQuality | null
   revenueSourceUrl: string | null
   operatingSourceUrl: string | null
+  netDebtCents: number | null
+  leaseAdjustedNetDebtCents: number | null
+  interestCoverageRatio: number | null
+  geographyNote: string | null
+  attendanceUsShare: number | null
+  admissionsRevenueUsShare: number | null
 }
 
 function daysBetween(from: string, to: string): number {
@@ -144,6 +155,10 @@ function yoyRatio(
 export interface OperatorQuarterEntry {
   periodEnd: string
   label: string
+  periodStart: string
+  fiscalYear: number | null
+  fiscalPeriod: string | null
+  calendarLabel: string
   revenueCents: number
   netIncomeCents: number | null
   attendanceCount: number | null
@@ -163,6 +178,7 @@ export interface OperatorQuarterEntry {
   sharesOutstanding: number | null
   theatreCount: number | null
   screenCount: number | null
+  attendancePerScreen: number | null
 }
 
 export function calendarQuarterLabel(periodEnd: string): string {
@@ -185,7 +201,83 @@ function leaseTotalAt(rows: OperatorFactRow[], periodEnd: string): number | null
     ? leaseNoncurrent.value + (leaseCurrent?.value ?? 0)
     : null
 }
+export function leaseAdjustedNetDebt(
+  debtCents: number | null,
+  leaseCents: number | null,
+  cashCents: number | null,
+): number | null {
+  if (debtCents === null || leaseCents === null || cashCents === null) {
+    return null
+  }
+  return debtCents + leaseCents - cashCents
+}
 
+export function interestCoverage(
+  operatingIncomeCents: number | null,
+  interestExpenseCents: number | null,
+): number | null {
+  if (operatingIncomeCents === null || interestExpenseCents === null || interestExpenseCents === 0) {
+    return null
+  }
+  return operatingIncomeCents / interestExpenseCents
+}
+
+function segmentKind(concept: string | null | undefined): 'us' | 'intl' | null {
+  const qualifier = !concept
+    ? ''
+    : concept.includes(':')
+      ? concept.slice(concept.indexOf(':') + 1)
+      : concept
+  const spaced = qualifier.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_.]/g, ' ')
+  const tokens = spaced.toLowerCase().split(/[^a-z]+/).filter((token) => token.length > 0)
+  const isUs = ['domestic', 'us', 'usa'].some((name) => tokens.includes(name))
+    || tokens.join(' ').includes('u s')
+    || (tokens.includes('united') && tokens.includes('states'))
+    || (tokens.includes('north') && tokens.includes('america'))
+  if (isUs) {
+    return 'us'
+  }
+  const isIntl = ['international', 'foreign', 'overseas', 'europe', 'emea', 'apac', 'latam'].some((name) => tokens.includes(name))
+    || (tokens.includes('latin') && tokens.includes('america'))
+    || (tokens.includes('asia') && tokens.includes('pacific'))
+    || (tokens.includes('rest') && tokens.includes('world'))
+  if (isIntl) {
+    return 'intl'
+  }
+  return null
+}
+
+function segmentUsShareAt(rows: OperatorFactRow[], metric: string, periodEnd: string): number | null {
+  const flows = rows.filter((row) => row.metric === metric && row.periodEnd === periodEnd && isQuarterlyFlow(row))
+  const total = latestFiled(flows.filter((row) => segmentKind(row.concept) === null))
+  const usPortion = latestFiled(flows.filter((row) => segmentKind(row.concept) === 'us'))
+  const intlPortion = latestFiled(flows.filter((row) => segmentKind(row.concept) === 'intl'))
+  if (usPortion && total && usPortion.concept !== total.concept && total.value !== 0) {
+    return usPortion.value / total.value
+  }
+  if (usPortion && intlPortion && usPortion.concept !== intlPortion.concept && usPortion.value + intlPortion.value !== 0) {
+    return usPortion.value / (usPortion.value + intlPortion.value)
+  }
+  return null
+}
+
+function geographyNoteAt(rows: OperatorFactRow[], periodEnd: string): string | null {
+  const seen: Record<string, true> = {}
+  for (const row of rows) {
+    if (row.periodEnd !== periodEnd) {
+      continue
+    }
+    if (row.concept === null || row.concept === undefined) {
+      continue
+    }
+    if (segmentKind(row.concept) === null) {
+      continue
+    }
+    seen[row.concept] = true
+  }
+  const concepts = Object.keys(seen).sort()
+  return concepts.length > 0 ? `SEC segment disclosure: ${concepts.join(', ')}` : null
+}
 function perPatronAt(
   attendance: number | null,
   revenueCents: number | null,
@@ -278,7 +370,8 @@ export function buildOperatorQuarterlyHistory(
       if (revenueCents === null) {
         return null
       }
-      const attendanceCount = quarterlyFlowAt(rows, 'attendance', periodEnd)?.value ?? null
+      const attendanceRow = quarterlyFlowAt(rows, 'attendance', periodEnd)
+      const attendanceCount = attendanceRow?.value ?? null
       const admissionsRevenueCents = quarterlyFlowAt(rows, 'admissions_revenue', periodEnd)?.value ?? null
       const foodBeverageRevenueCents = quarterlyFlowAt(rows, 'food_beverage_revenue', periodEnd)?.value ?? null
       const operatingCashFlowCents = quarterlyFlowOrYtdDifference(rows, 'operating_cash_flow', periodEnd)
@@ -286,10 +379,21 @@ export function buildOperatorQuarterlyHistory(
       const shares = latestFiled(
         rows.filter((row) => row.metric === 'shares_outstanding' && row.periodEnd === periodEnd),
       )
-
+      const screenRow = latestFiled(
+        rows.filter((row) => row.metric === 'screen_count' && row.periodEnd === periodEnd),
+      )
+      const screenCount = screenRow?.value ?? null
+      const attendancePerScreen = attendanceRow && screenRow && screenRow.periodEnd === attendanceRow.periodEnd && screenRow.value !== 0
+        ? Math.round(attendanceRow.value / screenRow.value)
+        : null
+      const revenueAnchor = quarterlyFlowAt(rows, 'revenue', periodEnd)
       return {
         periodEnd,
         label: calendarQuarterLabel(periodEnd),
+        periodStart: revenueAnchor?.periodStart ?? periodEnd,
+        fiscalYear: revenueAnchor?.fiscalYear ?? null,
+        fiscalPeriod: revenueAnchor?.fiscalPeriod ?? null,
+        calendarLabel: calendarQuarterLabel(periodEnd),
         revenueCents,
         netIncomeCents: quarterlyFlowOrYtdDifference(rows, 'net_income', periodEnd),
         attendanceCount,
@@ -312,9 +416,8 @@ export function buildOperatorQuarterlyHistory(
         theatreCount: latestFiled(
           rows.filter((row) => row.metric === 'theatre_count' && row.periodEnd === periodEnd),
         )?.value ?? null,
-        screenCount: latestFiled(
-          rows.filter((row) => row.metric === 'screen_count' && row.periodEnd === periodEnd),
-        )?.value ?? null,
+        screenCount,
+        attendancePerScreen,
       }
     })
     .filter((entry) => entry !== null)
@@ -355,6 +458,10 @@ export function buildOperatorSnapshotEntry(
     name: company.name,
     latestQuarterLabel: null,
     latestQuarterEnd: null,
+    latestPeriodStart: null,
+    latestFiscalYear: null,
+    latestFiscalPeriod: null,
+    latestCalendarLabel: null,
     revenueCents: null,
     revenueYoyRatio: null,
     operatingIncomeCents: null,
@@ -384,6 +491,12 @@ export function buildOperatorSnapshotEntry(
     revenuePerPatronYoyQuality: null,
     revenueSourceUrl: null,
     operatingSourceUrl: null,
+    netDebtCents: null,
+    leaseAdjustedNetDebtCents: null,
+    interestCoverageRatio: null,
+    geographyNote: null,
+    attendanceUsShare: null,
+    admissionsRevenueUsShare: null,
   }
 
   const quarterlyRevenues = rows.filter((row) => row.metric === 'revenue' && isQuarterlyFlow(row))
@@ -483,19 +596,30 @@ export function buildOperatorSnapshotEntry(
       ))
     : null
 
+  const operatingIncomeCents = quarterlyFlowOrYtdDifference(rows, 'operating_income', latestQuarterEnd)
+  const cashCents = instantAt(rows, 'cash', latestQuarterEnd)?.value ?? null
+  const longTermDebtCents = debtNoncurrent
+    ? debtNoncurrent.value + (debtCurrent?.value ?? 0)
+    : null
+  const operatingLeaseCents = leaseNoncurrent
+    ? leaseNoncurrent.value + (leaseCurrent?.value ?? 0)
+    : null
+  const interestExpenseCents = quarterlyFlowAt(rows, 'interest_expense', latestQuarterEnd)?.value ?? null
   return {
     ticker: company.ticker,
     name: company.name,
     latestQuarterLabel: quarterLabel(revenue),
     latestQuarterEnd,
+    latestPeriodStart: revenue.periodStart,
+    latestFiscalYear: revenue.fiscalYear,
+    latestFiscalPeriod: revenue.fiscalPeriod,
+    latestCalendarLabel: calendarQuarterLabel(latestQuarterEnd),
     revenueCents: revenue.value,
     revenueYoyRatio: yoyRatio(rows, 'revenue', latestQuarterEnd, revenue.value),
-    operatingIncomeCents: quarterlyFlowOrYtdDifference(rows, 'operating_income', latestQuarterEnd),
+    operatingIncomeCents,
     netIncomeCents: quarterlyFlowOrYtdDifference(rows, 'net_income', latestQuarterEnd),
-    cashCents: instantAt(rows, 'cash', latestQuarterEnd)?.value ?? null,
-    longTermDebtCents: debtNoncurrent
-      ? debtNoncurrent.value + (debtCurrent?.value ?? 0)
-      : null,
+    cashCents,
+    longTermDebtCents,
     sharesOutstanding: shares?.value ?? null,
     attendanceCount: attendance?.value ?? null,
     attendanceYoyRatio,
@@ -507,15 +631,13 @@ export function buildOperatorSnapshotEntry(
     theatreCount: theatres?.value ?? null,
     screenCount: screens?.value ?? null,
     attendancePerScreen,
-    interestExpenseCents: quarterlyFlowAt(rows, 'interest_expense', latestQuarterEnd)?.value ?? null,
+    interestExpenseCents,
     operatingCashFlowCents,
     capexCents,
     freeCashFlowCents: operatingCashFlowCents !== null && capexCents !== null
       ? operatingCashFlowCents - capexCents
       : null,
-    operatingLeaseCents: leaseNoncurrent
-      ? leaseNoncurrent.value + (leaseCurrent?.value ?? 0)
-      : null,
+    operatingLeaseCents,
     revenuePerPatronYoyRatio,
     latestOperatingQuarterEnd,
     perPatronQuality: attendance ? 'derived' : null,
@@ -531,5 +653,11 @@ export function buildOperatorSnapshotEntry(
         : 'estimated',
     revenueSourceUrl: revenue.sourceUrl ?? null,
     operatingSourceUrl: operatingSource?.sourceUrl ?? null,
+    netDebtCents: longTermDebtCents !== null && cashCents !== null ? longTermDebtCents - cashCents : null,
+    leaseAdjustedNetDebtCents: leaseAdjustedNetDebt(longTermDebtCents, operatingLeaseCents, cashCents),
+    interestCoverageRatio: interestCoverage(operatingIncomeCents, interestExpenseCents),
+    geographyNote: latestOperatingQuarterEnd ? geographyNoteAt(rows, latestOperatingQuarterEnd) : null,
+    attendanceUsShare: latestAttendanceEnd ? segmentUsShareAt(rows, 'attendance', latestAttendanceEnd) : null,
+    admissionsRevenueUsShare: latestAdmissionsEnd ? segmentUsShareAt(rows, 'admissions_revenue', latestAdmissionsEnd) : null,
   }
 }

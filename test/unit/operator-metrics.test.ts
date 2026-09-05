@@ -2,17 +2,24 @@ import { describe, expect, it } from 'vitest'
 import {
   buildOperatorQuarterlyHistory,
   buildOperatorSnapshotEntry,
+  interestCoverage,
+  leaseAdjustedNetDebt,
   type OperatorFactRow,
 } from '../../server/ingest/operator-metrics'
 
 const company = { ticker: 'AMC', name: 'AMC Entertainment' }
 
+function fiscalFor(end: string): { fiscalYear: number, fiscalPeriod: string } {
+  const [year, month] = end.split('-')
+  return { fiscalYear: Number(year), fiscalPeriod: `Q${Math.ceil(Number(month) / 3)}` }
+}
+
 function flow(metric: string, start: string, end: string, value: number, filed = '2026-07-23'): OperatorFactRow {
-  return { metric, periodStart: start, periodEnd: end, value, filedDate: filed, fiscalYear: 2026, fiscalPeriod: 'Q2' }
+  return { metric, periodStart: start, periodEnd: end, value, filedDate: filed, ...fiscalFor(end) }
 }
 
 function instant(metric: string, end: string, value: number, filed = '2026-07-23'): OperatorFactRow {
-  return { metric, periodStart: end, periodEnd: end, value, filedDate: filed, fiscalYear: 2026, fiscalPeriod: 'Q2' }
+  return { metric, periodStart: end, periodEnd: end, value, filedDate: filed, ...fiscalFor(end) }
 }
 
 describe('buildOperatorSnapshotEntry', () => {
@@ -238,6 +245,70 @@ describe('buildOperatorSnapshotEntry', () => {
       expect(partial.operatingCashFlowCents).toBeNull()
       expect(partial.freeCashFlowCents).toBeNull()
     })
+
+    it('exposes net debt, lease-adjusted net debt, and interest coverage', () => {
+      expect(financialEntry.netDebtCents).toBe(385_000 - 70_000)
+      expect(financialEntry.leaseAdjustedNetDebtCents).toBe(385_000 + 350_000 - 70_000)
+      expect(financialEntry.interestCoverageRatio).toBeCloseTo(20_000 / 11_000, 10)
+    })
+  })
+
+  describe('leverage null-safety', () => {
+    it('returns null when any lease-adjusted input is missing', () => {
+      expect(leaseAdjustedNetDebt(null, 1, 1)).toBeNull()
+      expect(leaseAdjustedNetDebt(1, null, 1)).toBeNull()
+      expect(leaseAdjustedNetDebt(1, 1, null)).toBeNull()
+      expect(leaseAdjustedNetDebt(385_000, 350_000, 70_000)).toBe(665_000)
+    })
+
+    it('returns null interest coverage without operating income, interest, or with zero interest', () => {
+      expect(interestCoverage(null, 11_000)).toBeNull()
+      expect(interestCoverage(20_000, null)).toBeNull()
+      expect(interestCoverage(20_000, 0)).toBeNull()
+      expect(interestCoverage(20_000, 11_000)).toBeCloseTo(20_000 / 11_000, 10)
+    })
+
+    it('leaves leverage null when balance-sheet inputs are stale', () => {
+      const noCash = rows.filter(
+        (row) => !(row.metric === 'cash' && row.periodEnd === '2026-06-30'),
+      )
+      const stale = buildOperatorSnapshotEntry(company, noCash)
+      expect(stale.netDebtCents).toBeNull()
+      expect(stale.leaseAdjustedNetDebtCents).toBeNull()
+    })
+  })
+
+  describe('geography split', () => {
+    function segmented(metric: string, concept: string, value: number): OperatorFactRow {
+      return { ...flow(metric, '2026-04-01', '2026-06-30', value), concept }
+    }
+
+    it('leaves shares and notes null when filings disclose no segment rows', () => {
+      const plain = buildOperatorSnapshotEntry(company, [
+        ...rows,
+        flow('attendance', '2026-04-01', '2026-06-30', 50_000),
+        flow('admissions_revenue', '2026-04-01', '2026-06-30', 90_000),
+      ])
+      expect(plain.attendanceUsShare).toBeNull()
+      expect(plain.admissionsRevenueUsShare).toBeNull()
+      expect(plain.geographyNote).toBeNull()
+    })
+
+    it('derives US shares only from explicit segment rows', () => {
+      const split = buildOperatorSnapshotEntry(company, [
+        ...rows,
+        flow('attendance', '2026-04-01', '2026-06-30', 50_000),
+        segmented('attendance', 'us-gaap:RevenueDomestic', 30_000),
+        segmented('attendance', 'us-gaap:RevenueInternational', 20_000),
+        flow('admissions_revenue', '2026-04-01', '2026-06-30', 90_000),
+        segmented('admissions_revenue', 'us-gaap:RevenueDomestic', 60_000),
+        segmented('admissions_revenue', 'us-gaap:RevenueInternational', 30_000),
+      ])
+      expect(split.attendanceUsShare).toBeCloseTo(0.6, 10)
+      expect(split.admissionsRevenueUsShare).toBeCloseTo(60_000 / 90_000, 10)
+      expect(split.geographyNote).toContain('us-gaap:RevenueDomestic')
+      expect(split.geographyNote).toContain('us-gaap:RevenueInternational')
+    })
   })
 })
 
@@ -286,7 +357,6 @@ describe('buildOperatorQuarterlyHistory', () => {
     expect(history).toHaveLength(1)
     expect(history[0]!.revenueCents).toBe(105_000)
   })
-
   it('derives the fourth quarter from full-year and nine-month facts', () => {
     const history = buildOperatorQuarterlyHistory([
       flow('revenue', '2025-01-01', '2025-12-31', 400_000, '2026-02-25'),
@@ -296,5 +366,44 @@ describe('buildOperatorQuarterlyHistory', () => {
 
     expect(history.map((entry) => entry.label)).toEqual(['Q4 2025', 'Q1 2026'])
     expect(history[0]!.revenueCents).toBe(110_000)
+  })
+
+  it('computes attendance per screen only when counts align in the same quarter', () => {
+    const history = buildOperatorQuarterlyHistory([
+      flow('revenue', '2026-04-01', '2026-06-30', 150_000),
+      flow('revenue', '2026-01-01', '2026-03-31', 100_000, '2026-05-01'),
+      flow('attendance', '2026-04-01', '2026-06-30', 50_000),
+      instant('screen_count', '2026-06-30', 9_530),
+      flow('attendance', '2026-01-01', '2026-03-31', 40_000, '2026-05-01'),
+    ])
+
+    expect(history.at(-1)?.attendancePerScreen).toBe(Math.round(50_000 / 9_530))
+    expect(history[0]?.attendancePerScreen).toBeNull()
+  })
+
+  it('exposes fiscal and calendar period identity without conflating them', () => {
+    const history = buildOperatorQuarterlyHistory([
+      flow('revenue', '2026-04-01', '2026-06-30', 150_000),
+    ])
+
+    expect(history.at(-1)).toMatchObject({
+      periodEnd: '2026-06-30',
+      periodStart: '2026-04-01',
+      fiscalYear: 2026,
+      fiscalPeriod: 'Q2',
+      calendarLabel: 'Q2 2026',
+      label: 'Q2 2026',
+    })
+
+    const calendarOnly = buildOperatorQuarterlyHistory([
+      { ...flow('revenue', '2026-04-01', '2026-06-30', 150_000), fiscalYear: null, fiscalPeriod: null },
+    ])
+
+    expect(calendarOnly.at(-1)).toMatchObject({
+      fiscalYear: null,
+      fiscalPeriod: null,
+      calendarLabel: 'Q2 2026',
+      label: 'Q2 2026',
+    })
   })
 })

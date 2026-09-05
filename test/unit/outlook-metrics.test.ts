@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildForwardWindowComparison,
+  buildHistoricalReleaseVolume,
   buildOutlookSnapshot,
   isExpectedWideRelease,
   isRerelease,
+  type DistributorTitleRow,
   type UpcomingReleaseRow,
 } from '../../server/ingest/outlook-metrics'
 
 function row(overrides: Partial<UpcomingReleaseRow> & Pick<UpcomingReleaseRow, 'movieId' | 'title' | 'releaseDate'>): UpcomingReleaseRow {
   return {
     releaseType: 'theatrical_wide',
+    certification: null,
     popularity: 20,
     primaryReleaseDate: overrides.releaseDate,
     ...overrides,
@@ -81,5 +85,112 @@ describe('buildOutlookSnapshot', () => {
       { title: 'Limited Soon', releaseDate: '2026-09-24' },
       { title: 'Fall Tentpole', releaseDate: '2026-11-20' },
     ])
+  })
+})
+
+describe('monthlySplit', () => {
+  const snapshot = buildOutlookSnapshot(rows, '2026-08-29')
+
+  it('splits each month into expected-wide versus limited with totals intact', () => {
+    expect(snapshot.monthlySplit).toEqual([
+      { month: '2026-09', total: 4, wide: 2, limited: 1 },
+      { month: '2026-11', total: 1, wide: 1, limited: 0 },
+      { month: '2027-02', total: 1, wide: 1, limited: 0 },
+    ])
+  })
+
+  it('keeps monthlyCounts aligned with the split totals', () => {
+    expect(snapshot.monthlySplit.map((entry) => ({ month: entry.month, count: entry.total })))
+      .toEqual(snapshot.monthlyCounts)
+  })
+})
+
+describe('supply mix', () => {
+  const snapshot = buildOutlookSnapshot(rows, '2026-08-29')
+
+  it('counts each movie once by release type using its earliest window date', () => {
+    expect(snapshot.mixByReleaseType).toEqual([
+      { releaseType: 'theatrical_wide', count: 5 },
+      { releaseType: 'theatrical_limited', count: 1 },
+    ])
+  })
+
+  it('labels missing certifications as Unrated/NA', () => {
+    expect(snapshot.mixByCertification).toEqual([
+      { certification: 'Unrated/NA', count: 6 },
+    ])
+  })
+
+  it('groups certifications and treats blank values as unrated', () => {
+    const mixed = buildOutlookSnapshot(
+      [
+        row({ movieId: 10, title: 'Rated A', releaseDate: '2026-09-05', certification: 'PG-13' }),
+        row({ movieId: 11, title: 'Blank Cert', releaseDate: '2026-09-06', certification: '  ' }),
+        row({ movieId: 12, title: 'Missing Cert', releaseDate: '2026-09-07', certification: null }),
+        row({ movieId: 13, title: 'Rated B', releaseDate: '2026-11-01', certification: 'R' }),
+      ],
+      '2026-08-29',
+    )
+    expect(mixed.mixByCertification).toEqual([
+      { certification: 'Unrated/NA', count: 2 },
+      { certification: 'PG-13', count: 1 },
+      { certification: 'R', count: 1 },
+    ])
+  })
+})
+
+describe('hasData', () => {
+  it('is true when upcoming rows back the snapshot', () => {
+    expect(buildOutlookSnapshot(rows, '2026-08-29').hasData).toBe(true)
+  })
+
+  it('stays false with honest zeros when nothing was ingested', () => {
+    const empty = buildOutlookSnapshot([], '2026-08-29')
+    expect(empty.hasData).toBe(false)
+    expect(empty.next30DayCount).toBe(0)
+    expect(empty.next90DayCount).toBe(0)
+    expect(empty.next180DayCount).toBe(0)
+    expect(empty.next90DayWideCount).toBe(0)
+    expect(empty.monthlyCounts).toEqual([])
+    expect(empty.monthlySplit).toEqual([])
+    expect(empty.mixByReleaseType).toEqual([])
+    expect(empty.mixByCertification).toEqual([])
+  })
+})
+
+describe('buildHistoricalReleaseVolume', () => {
+  it('sums distributor title counts per year in label order', () => {
+    const volume = buildHistoricalReleaseVolume([
+      { periodLabel: '2024', titleCount: 300, isPartial: false },
+      { periodLabel: '2024', titleCount: 200, isPartial: false },
+      { periodLabel: '2023', titleCount: 400, isPartial: false },
+    ])
+    expect(volume).toEqual([
+      { periodLabel: '2023', titleCount: 400 },
+      { periodLabel: '2024', titleCount: 500 },
+    ])
+  })
+})
+
+describe('buildForwardWindowComparison', () => {
+  const history: DistributorTitleRow[] = [
+    { periodLabel: '2024', titleCount: 500, isPartial: false },
+    { periodLabel: '2025', titleCount: 100, isPartial: true },
+  ]
+
+  it('pro-rates the most recent completed year to a half-year pace', () => {
+    expect(buildForwardWindowComparison(120, history)).toEqual({
+      windowDays: 180,
+      currentCount: 120,
+      priorYearSameWindowCount: 250,
+    })
+  })
+
+  it('returns a null pace when history is absent', () => {
+    expect(buildForwardWindowComparison(120, [])).toEqual({
+      windowDays: 180,
+      currentCount: 120,
+      priorYearSameWindowCount: null,
+    })
   })
 })

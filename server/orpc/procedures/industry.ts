@@ -6,6 +6,7 @@ import {
   buildDistributorShares,
   buildIndustrySnapshot,
   buildIndustryTrend,
+  buildReleaseVolumeHistory,
 } from '../../ingest/metrics'
 import {
   DOMESTIC_TERRITORY,
@@ -13,6 +14,8 @@ import {
   THE_NUMBERS_SOURCE,
 } from '../../ingest/sources/the-numbers/constants'
 import { pub } from '../context'
+
+export const recoveryBaselineInputSchema = z.enum(['2019', 'avg2017_2019'])
 
 export const industrySnapshotSchema = z.object({
   latestObservationDate: z.string().nullable(),
@@ -24,6 +27,7 @@ export const industrySnapshotSchema = z.object({
   recoveryVs2019Ratio: z.number().nullable(),
   recoveryPeriodLabel: z.string().nullable(),
   recoveryBaselinePeriodLabel: z.string(),
+  recoveryBaseline: recoveryBaselineInputSchema,
   latestMarketYear: z
     .object({
       periodLabel: z.string(),
@@ -41,6 +45,12 @@ export const industrySnapshotSchema = z.object({
       averageTicketPriceCents: z.number().int().nullable(),
       isPartial: z.boolean().nullable(),
       yoyGrowthRatio: z.number().nullable(),
+    }),
+  ),
+  releaseVolume: z.array(
+    z.object({
+      periodLabel: z.string(),
+      titleCount: z.number().int(),
     }),
   ),
   distributorShares: z
@@ -61,7 +71,6 @@ export const industrySnapshotSchema = z.object({
 })
 
 export type IndustrySnapshotResult = z.infer<typeof industrySnapshotSchema>
-
 const emptySnapshot: IndustrySnapshotResult = {
   latestObservationDate: null,
   latestDailyTotalCents: null,
@@ -72,18 +81,21 @@ const emptySnapshot: IndustrySnapshotResult = {
   recoveryVs2019Ratio: null,
   recoveryPeriodLabel: null,
   recoveryBaselinePeriodLabel: '2019',
+  recoveryBaseline: '2019',
   latestMarketYear: null,
   marketYears: [],
+  releaseVolume: [],
   distributorShares: null,
 }
 
 export const snapshot = pub
+  .input(z.object({ baseline: recoveryBaselineInputSchema.default('2019') }))
   .output(industrySnapshotSchema)
-  .handler(async ({ context }) => {
+  .handler(async ({ context, input }) => {
     const db = await getDatabase(context.event)
 
     if (!db) {
-      return emptySnapshot
+      return { ...emptySnapshot, recoveryBaseline: input.baseline }
     }
 
     const dailyRows = await db
@@ -134,9 +146,10 @@ export const snapshot = pub
           eq(marketDistributorYear.geography, DOMESTIC_TERRITORY),
         ),
       )
-
     return industrySnapshotSchema.parse({
-      ...buildIndustrySnapshot(dailyRows, periods),
+      ...buildIndustrySnapshot(dailyRows, periods, input.baseline),
+      recoveryBaseline: input.baseline,
+      releaseVolume: buildReleaseVolumeHistory(distributorRows),
       distributorShares: buildDistributorShares(distributorRows),
     })
   })
@@ -163,6 +176,17 @@ export const industryTrendSchema = z.object({
       ),
     }),
   ),
+  seasonality: z
+    .object({
+      years: z.array(z.number().int()),
+      months: z.array(
+        z.object({
+          monthNumber: z.number().int(),
+          values: z.record(z.string(), z.number().int().nullable()),
+        }),
+      ),
+    })
+    .nullable(),
 })
 
 export type IndustryTrendResult = z.infer<typeof industryTrendSchema>
@@ -171,6 +195,7 @@ const emptyTrend: IndustryTrendResult = {
   asOfDate: null,
   comparisonYears: [],
   monthlyByYear: [],
+  seasonality: null,
 }
 
 export const trend = pub

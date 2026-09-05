@@ -30,8 +30,6 @@
     "@orpc/client": "^1.15.0",
     "@orpc/server": "^1.15.0",
     "@tanstack/charts": "^0.16.0",
-    "@unovis/ts": "^1.6.7",
-    "@unovis/vue": "^1.6.7",
     "@vueuse/core": "^14.4.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -61,6 +59,7 @@
     "nitro-cloudflare-dev": "^0.2.2",
     "tailwindcss": "^4.3.3",
     "typescript": "5.9.3",
+    "typescript-language-server": "^6.0.0",
     "vitest": "^4.1.11",
     "vue-tsc": "^3.3.11",
     "wrangler": "^4.127.1"

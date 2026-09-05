@@ -51,16 +51,18 @@ function findLocalD1SqlitePath(cwd = process.cwd()): string {
                AS c`,
           )
           .get() as { c: number } | null
-        return { path, tableCount: tables?.c ?? 0, rowCount: rows?.c ?? 0 }
+        const stat = Bun.file(path).size
+        const wal = Bun.file(`${path}-wal`).size
+        return { path, tableCount: tables?.c ?? 0, rowCount: rows?.c ?? 0, freshness: stat + wal }
       }
       catch {
-        return { path, tableCount: 0, rowCount: 0 }
+        return { path, tableCount: 0, rowCount: 0, freshness: 0 }
       }
       finally {
         sqlite.close()
       }
     })
-    .sort((a, b) => b.rowCount - a.rowCount || b.tableCount - a.tableCount)
+    .sort((a, b) => b.freshness - a.freshness || b.rowCount - a.rowCount || b.tableCount - a.tableCount)
 
   const best = ranked[0]
   if (!best || best.tableCount === 0) {

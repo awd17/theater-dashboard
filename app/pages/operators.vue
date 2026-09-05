@@ -2,6 +2,8 @@
 import {
   formatCount,
   formatMillionsCount,
+  formatQuarterIdentity,
+  formatQuarterPeriodRange,
   formatShares,
   formatSignedRatio,
   formatTheatresScreens,
@@ -25,6 +27,29 @@ useHead({ title: 'Operators' })
 
 const loading = computed(() => status.value === 'pending')
 const rows = computed(() => operators.value?.operators ?? [])
+
+function operatorIdentity(operator: {
+  latestQuarterLabel: string | null
+  latestQuarterEnd: string | null
+  latestFiscalYear: number | null
+  latestFiscalPeriod: string | null
+  latestCalendarLabel: string | null
+}): string {
+  return formatQuarterIdentity({
+    label: operator.latestQuarterLabel,
+    periodEnd: operator.latestQuarterEnd,
+    fiscalYear: operator.latestFiscalYear,
+    fiscalPeriod: operator.latestFiscalPeriod,
+    calendarLabel: operator.latestCalendarLabel,
+  })
+}
+
+function operatorRange(operator: {
+  latestPeriodStart: string | null
+  latestQuarterEnd: string | null
+}): string {
+  return formatQuarterPeriodRange({ periodStart: operator.latestPeriodStart, periodEnd: operator.latestQuarterEnd })
+}
 
 const perPatronBars = computed(() =>
   rows.value.map((operator) => ({
@@ -121,6 +146,29 @@ function hideQuadrantTooltip(): void {
   quadrantTooltip.value = null
 }
 
+const perScreenLines = computed(() =>
+  (history.value?.operators ?? []).map((operator, index) => ({
+    key: operator.ticker,
+    label: operator.ticker,
+    color: ['var(--chart-2)', 'var(--chart-4)', 'var(--chart-5)'][index % 3]!,
+    points: operator.quarters.map((quarter) => ({
+      label: quarter.label,
+      value: quarter.attendancePerScreen,
+    })),
+  })),
+)
+
+function formatCoverage(ratio: number | null | undefined): string {
+  if (ratio === null || ratio === undefined || !Number.isFinite(ratio)) {
+    return '—'
+  }
+  return `${ratio.toFixed(1)}×`
+}
+
+const hasPerScreenHistory = computed(() =>
+  perScreenLines.value.some((line) => line.points.some((point) => point.value !== null)),
+)
+
 const revenueTrend = computed(() => {
   const historyRows = history.value?.operators ?? []
   if (historyRows.length === 0) {
@@ -147,13 +195,6 @@ const revenueTrend = computed(() => {
     })),
   }
 })
-
-function netDebt(operator: typeof rows.value[number]): number | null {
-  if (operator.longTermDebtCents === null || operator.cashCents === null) {
-    return null
-  }
-  return operator.longTermDebtCents - operator.cashCents
-}
 
 const quadrantExtent = 20
 </script>
@@ -186,7 +227,7 @@ const quadrantExtent = 20
                 <CardTitle>{{ operator.ticker }}</CardTitle>
                 <CardDescription>{{ operator.name }}</CardDescription>
               </div>
-              <Badge variant="outline">
+              <Badge variant="outline" :title="`${operatorRange(operator)} · reported ${operator.latestQuarterEnd ?? '—'}`">
                 {{ operator.latestQuarterLabel ?? '—' }}
               </Badge>
             </div>
@@ -208,12 +249,18 @@ const quadrantExtent = 20
                 <span class="ml-1 text-xs font-normal text-muted-foreground">
                   {{ formatSignedRatio(operator.attendanceYoyRatio) }}
                 </span>
+                <Badge v-if="operator.attendanceYoyQuality" variant="outline" class="ml-1 text-[10px]">
+                  {{ qualityLabels[operator.attendanceYoyQuality] }}
+                </Badge>
               </span>
             </div>
             <div class="flex items-baseline justify-between gap-2">
               <span class="text-muted-foreground">Rev / patron</span>
               <span class="font-medium tabular-nums">
                 {{ formatUsdExact(operator.revenuePerPatronCents) }}
+                <Badge v-if="operator.perPatronQuality" variant="outline" class="ml-1 text-[10px]">
+                  {{ qualityLabels[operator.perPatronQuality] }}
+                </Badge>
               </span>
             </div>
             <div class="flex items-baseline justify-between gap-2">
@@ -347,7 +394,10 @@ const quadrantExtent = 20
           </p>
         </DashboardSectionCard>
       </div>
-
+      <p class="text-xs text-muted-foreground">
+        Quality badges: reported values come straight from filings, derived values combine reported inputs,
+        estimated values use a modeled proxy.
+      </p>
       <DashboardSectionCard
         title="Operations scorecard"
         description="Attendance, footprint, and admissions/F&B split from the latest reported quarter."
@@ -378,7 +428,7 @@ const quadrantExtent = 20
                     {{ operator.ticker }}
                   </NuxtLink>
                 </TableCell>
-                <TableCell>{{ operator.latestQuarterLabel ?? '—' }}</TableCell>
+                <TableCell :title="`${operatorRange(operator)} · reported ${operator.latestQuarterEnd ?? '—'}`">{{ operatorIdentity(operator) }}</TableCell>
                 <TableCell class="tabular-nums">
                   {{ formatUsdMillions(operator.revenueCents) }}
                 </TableCell>
@@ -390,6 +440,9 @@ const quadrantExtent = 20
                   <template v-if="operator.attendanceYoyRatio !== null">
                     · {{ formatSignedRatio(operator.attendanceYoyRatio) }}
                   </template>
+                  <Badge v-if="operator.attendanceYoyQuality" variant="outline" class="ml-1 text-[10px]">
+                    {{ qualityLabels[operator.attendanceYoyQuality] }}
+                  </Badge>
                 </TableCell>
                 <TableCell class="tabular-nums">
                   {{ formatTheatresScreens(operator.theatreCount, operator.screenCount) }}
@@ -399,17 +452,30 @@ const quadrantExtent = 20
                 </TableCell>
                 <TableCell class="tabular-nums">
                   {{ formatUsdExact(operator.averageTicketPriceCents) }}
+                  <Badge v-if="operator.perPatronQuality" variant="outline" class="ml-1 text-[10px]">
+                    {{ qualityLabels[operator.perPatronQuality] }}
+                  </Badge>
                 </TableCell>
                 <TableCell class="tabular-nums">
                   {{ formatUsdExact(operator.foodBeveragePerPatronCents) }}
+                  <Badge v-if="operator.perPatronQuality" variant="outline" class="ml-1 text-[10px]">
+                    {{ qualityLabels[operator.perPatronQuality] }}
+                  </Badge>
                 </TableCell>
                 <TableCell class="tabular-nums">
                   {{ formatUsdExact(operator.revenuePerPatronCents) }}
+                  <Badge v-if="operator.perPatronQuality" variant="outline" class="ml-1 text-[10px]">
+                    {{ qualityLabels[operator.perPatronQuality] }}
+                  </Badge>
                 </TableCell>
               </TableRow>
             </TableBody>
           </Table>
         </div>
+        <p class="mt-3 text-xs text-muted-foreground">
+          Reported values come straight from filings, derived values combine reported inputs,
+          estimated values use a modeled proxy.
+        </p>
       </DashboardSectionCard>
 
       <DashboardSectionCard
@@ -444,7 +510,7 @@ const quadrantExtent = 20
                   {{ formatUsdMillions(operator.longTermDebtCents) }}
                 </TableCell>
                 <TableCell class="tabular-nums">
-                  {{ formatUsdMillions(netDebt(operator)) }}
+                  {{ formatUsdMillions(operator.netDebtCents) }}
                 </TableCell>
                 <TableCell class="tabular-nums">
                   {{ formatUsdMillions(operator.interestExpenseCents) }}
@@ -474,6 +540,52 @@ const quadrantExtent = 20
           AMC and Marcus screens are period-end counts while Cinemark reports a quarterly average.
           Missing cells mean no comparable current-period public value was available.
         </p>
+      </DashboardSectionCard>
+
+      <DashboardSectionCard
+        title="Lease-adjusted leverage"
+        description="Net debt, lease-adjusted net debt, and interest coverage from the latest reported quarter."
+      >
+        <div class="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Company</TableHead>
+                <TableHead>Net debt</TableHead>
+                <TableHead>Lease-adjusted net debt</TableHead>
+                <TableHead>Interest coverage</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow v-for="operator in rows" :key="operator.ticker">
+                <TableCell class="font-medium">
+                  {{ operator.ticker }}
+                </TableCell>
+                <TableCell class="tabular-nums">
+                  {{ formatUsdMillions(operator.netDebtCents) }}
+                </TableCell>
+                <TableCell class="tabular-nums">
+                  {{ formatUsdMillions(operator.leaseAdjustedNetDebtCents) }}
+                </TableCell>
+                <TableCell class="tabular-nums">
+                  {{ formatCoverage(operator.interestCoverageRatio) }}
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </div>
+        <p class="mt-3 text-xs text-muted-foreground">
+          Lease-adjusted net debt adds operating lease liabilities to long-term debt minus cash.
+          Missing values mean a required input was not filed for the latest quarter.
+        </p>
+      </DashboardSectionCard>
+
+      <DashboardSectionCard
+        v-if="hasPerScreenHistory"
+        title="Attendance per screen trend"
+        description="Attendance per screen over the last eight quarters."
+      >
+        <DashboardTrendLines :series="perScreenLines" :format-value="(value: number) => value.toFixed(0)" />
       </DashboardSectionCard>
 
       <DashboardSectionCard

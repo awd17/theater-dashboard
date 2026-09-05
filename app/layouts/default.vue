@@ -4,6 +4,7 @@ import { Menu, X } from '@lucide/vue'
 
 const route = useRoute()
 const mobileMenu = ref<HTMLDetailsElement | null>(null)
+const orpc = useORPC()
 
 useHead({
   titleTemplate: (title) => title ? `${title} · Reel Return` : 'Reel Return',
@@ -20,13 +21,39 @@ const links = [
   { to: '/outlook', label: 'Outlook', match: (path: string) => path.startsWith('/outlook') },
 ]
 
+const { data: siteHealth } = await useRpcData(
+  'site-health',
+  () => orpc.health(),
+)
+
+const coverageText = computed(() => {
+  const coverage = siteHealth.value?.coverage
+  const parts: string[] = []
+  if (coverage?.dailyLatestDate) {
+    parts.push(`daily box office through ${coverage.dailyLatestDate}`)
+  }
+  if (coverage?.marketLatestLabel) {
+    parts.push(`market ${coverage.marketLatestLabel}`)
+  }
+  return parts.length > 0 ? `Data: ${parts.join(' · ')}` : 'Data: no ingest yet'
+})
+
+const ingestText = computed(() => {
+  const sources = siteHealth.value?.ingestSources ?? []
+  if (sources.length === 0) {
+    return 'ingest status unknown'
+  }
+  return sources
+    .map((source) => source.finishedAt ? `${source.source} ${source.finishedAt.slice(0, 10)}` : `${source.source} ${source.status}`)
+    .join(' · ')
+})
+
 watch(() => route.path, () => {
   if (mobileMenu.value) {
     mobileMenu.value.open = false
   }
 })
 </script>
-
 <template>
   <div class="flex min-h-screen flex-col bg-background text-foreground">
     <header class="relative sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur-md">
@@ -94,8 +121,8 @@ watch(() => route.path, () => {
 
     <footer class="border-t border-border/80">
       <div class="mx-auto flex max-w-7xl flex-col gap-1 px-4 py-4 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6">
-        <p>Reel Return</p>
-        <p>Domestic box office, operator filings, and theatrical supply.</p>
+        <p>Reel Return · Domestic box office, operator filings, and theatrical supply.</p>
+        <p :title="ingestText">{{ coverageText }} ({{ ingestText }})</p>
       </div>
     </footer>
   </div>

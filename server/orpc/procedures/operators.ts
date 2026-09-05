@@ -23,6 +23,7 @@ async function loadCompanyFactRows(
       fiscalYear: companyFacts.fiscalYear,
       fiscalPeriod: companyFacts.fiscalPeriod,
       sourceUrl: companyFacts.sourceUrl,
+      concept: companyFacts.concept,
     })
     .from(companyFacts)
     .where(eq(companyFacts.companyId, companyId))
@@ -31,6 +32,10 @@ async function loadCompanyFactRows(
 const quarterSchema = z.object({
   periodEnd: z.string(),
   label: z.string(),
+  periodStart: z.string(),
+  fiscalYear: z.number().int().nullable(),
+  fiscalPeriod: z.string().nullable(),
+  calendarLabel: z.string(),
   revenueCents: z.number().int(),
   netIncomeCents: z.number().int().nullable(),
   attendanceCount: z.number().int().nullable(),
@@ -50,6 +55,7 @@ const quarterSchema = z.object({
   sharesOutstanding: z.number().int().nullable(),
   theatreCount: z.number().int().nullable(),
   screenCount: z.number().int().nullable(),
+  attendancePerScreen: z.number().int().nullable(),
 })
 
 export const operatorSnapshotSchema = z.object({
@@ -59,6 +65,10 @@ export const operatorSnapshotSchema = z.object({
       name: z.string(),
       latestQuarterLabel: z.string().nullable(),
       latestQuarterEnd: z.string().nullable(),
+      latestPeriodStart: z.string().nullable(),
+      latestFiscalYear: z.number().int().nullable(),
+      latestFiscalPeriod: z.string().nullable(),
+      latestCalendarLabel: z.string().nullable(),
       revenueCents: z.number().int().nullable(),
       revenueYoyRatio: z.number().nullable(),
       operatingIncomeCents: z.number().int().nullable(),
@@ -88,6 +98,12 @@ export const operatorSnapshotSchema = z.object({
       revenuePerPatronYoyQuality: z.enum(['reported', 'derived', 'estimated']).nullable(),
       revenueSourceUrl: z.string().url().nullable(),
       operatingSourceUrl: z.string().url().nullable(),
+      netDebtCents: z.number().int().nullable(),
+      leaseAdjustedNetDebtCents: z.number().int().nullable(),
+      interestCoverageRatio: z.number().nullable(),
+      geographyNote: z.string().nullable(),
+      attendanceUsShare: z.number().nullable(),
+      admissionsRevenueUsShare: z.number().nullable(),
     }),
   ),
 })
